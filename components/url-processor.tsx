@@ -43,7 +43,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const completionRef = useRef<HTMLDivElement>(null)
 
   // Backend API configuration
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://crew-backend-dxlx.onrender.com/analyze'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://cx506q4w-8000.inc1.devtunnels.ms/analyze'
+  // const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://crew-backend-dxlx.onrender.com/analyze'
 
   // Notify parent component when processing state changes
   useEffect(() => {
@@ -275,6 +276,32 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
+  // Step durations in milliseconds (total ~3 minutes = 180 seconds)
+  const getStepDuration = (stepId: string, totalSteps: number): number => {
+    // Heavy processing steps get more time
+    const heavySteps: Record<string, number> = {
+      "downloading": 15000,      // 15s - Download content
+      "splitting": 25000,        // 25s - Split video into frames (heavy)
+      "ocr": 30000,             // 30s - OCR processing (very heavy)
+      "scanning": 35000,        // 35s - Scan all frames with progress bar (heaviest)
+      "audio": 20000,           // 20s - Audio extraction
+      "stt": 28000,             // 28s - Speech-to-text (heavy)
+      "crawling": 20000,        // 20s - Web crawling
+      "analyzing": 25000,       // 25s - Text analysis
+      "report": 12000,          // 12s - Generate report
+    }
+
+    // Light processing steps
+    const lightSteps: Record<string, number> = {
+      "parsing": 3000,          // 3s
+      "identifying": 2000,      // 2s
+      "captions": 8000,         // 8s
+      "images": 10000,          // 10s
+    }
+
+    return heavySteps[stepId] || lightSteps[stepId] || 5000
+  }
+
   const generateSteps = (type: ContentType): ProcessStep[] => {
     const baseSteps = [
       { id: "parsing", label: "Parsing URL", completed: false, active: false, icon: Search },
@@ -347,13 +374,20 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       if (backendData && backendData.report) {
         setBackendResponse(backendData)
         setReportData(backendData.report)
+        addLog('🎉 Analysis completed successfully!', 'success')
+        addLog('📄 Report generated and ready for review', 'success')
         if (backendData.message) {
-          addLog(`📊 ${backendData.message}`, 'success')
+          addLog(`✓ ${backendData.message}`, 'success')
         }
       } else if (backendData) {
         // Fallback for other response formats
         setBackendResponse(backendData)
         setReportData(backendData.report || backendData)
+        addLog('🎉 Analysis completed successfully!', 'success')
+        addLog('📄 Report generated and ready for review', 'success')
+      } else {
+        // No backend data received (demo mode)
+        addLog('⚠️ Running in demo mode - no backend analysis available', 'warning')
       }
     } catch (error) {
       console.error('Error receiving backend data:', error)
@@ -361,14 +395,14 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
-  // Fallback simulation mode
+  // Simulation mode with realistic timing
   const runSimulationMode = async (processSteps: ProcessStep[]) => {
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await new Promise((resolve) => setTimeout(resolve, 500))
 
-    // Simulate processing steps (content type already detected)
+    // Simulate processing steps with realistic durations
     for (let i = 0; i < processSteps.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, i === 0 ? 800 : 1500))
-
+      const stepDuration = getStepDuration(processSteps[i].id, processSteps.length)
+      
       addLog(`⚡ ${processSteps[i].label}...`, 'info')
 
       setSteps((prev) =>
@@ -382,8 +416,9 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
 
       // Special handling for scanning frames step with progress bar
       if (processSteps[i].id === "scanning") {
+        const progressUpdateInterval = stepDuration / 20 // Update 20 times
         for (let progress = 0; progress <= 100; progress += 5) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
+          await new Promise((resolve) => setTimeout(resolve, progressUpdateInterval))
           setScanProgress(progress)
           setSteps((prev) =>
             prev.map((step) =>
@@ -394,16 +429,18 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
             addLog(`📊 Scanning progress: ${progress}%`, 'info')
           }
         }
+      } else {
+        // Wait for the step duration
+        await new Promise((resolve) => setTimeout(resolve, stepDuration))
       }
       
       addLog(`✓ ${processSteps[i].label} completed`, 'success')
     }
 
-    // Mark all as completed
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    // Mark all processing steps as completed
     setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
-    addLog('🎉 Processing completed successfully!', 'success')
-    addLog('📄 Report generated and ready for review', 'success')
+    addLog('⏳ Processing complete. Waiting for analysis results...', 'info')
+    addLog('🔍 Backend is finalizing the report...', 'info')
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -861,8 +898,31 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                   ))}
                 </div>
 
+                {/* Waiting for Backend */}
+                {steps.length > 0 && steps.every((s) => s.completed) && !reportData && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="relative z-10 mt-12 p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm"
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      >
+                        <Loader2 className="w-6 h-6 text-primary" />
+                      </motion.div>
+                      <h3 className="text-lg font-semibold text-white">Finalizing Analysis...</h3>
+                    </div>
+                    <p className="text-white/70">
+                      Processing is complete. Waiting for the final analysis report from the backend...
+                    </p>
+                  </motion.div>
+                )}
+
                 {/* Completion Message and Report */}
-                {steps.length > 0 && steps.every((s) => s.completed) && (
+                {steps.length > 0 && steps.every((s) => s.completed) && reportData && (
                   <motion.div
                     ref={completionRef}
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -887,13 +947,12 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                     </div>
 
                     {/* Report Analysis Display */}
-                    {reportData && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.5 }}
-                        className="space-y-6"
-                      >
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.5 }}
+                      className="space-y-6"
+                    >
                         {/* Report Header */}
                         <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
                           <div className="flex items-center gap-3 mb-4">
@@ -1073,7 +1132,6 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                           </details>
                         )}
                       </motion.div>
-                    )}
 
                     {/* Action Buttons */}
                     <div className="flex gap-3">

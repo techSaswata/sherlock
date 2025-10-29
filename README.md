@@ -2,11 +2,6 @@
 
 An intelligent platform that analyzes content from social media and websites, verifies claims, and provides evidence-based fact-check reports with confidence scores.
 
-[![Built with Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React 19](https://img.shields.io/badge/React-19-blue?style=flat-square&logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
-
 ## 🎯 Project Overview
 
 Sherlock is a full-stack content analysis platform that helps users verify the authenticity of online content. It combines powerful web scraping, AI-driven analysis, and beautiful user interfaces to deliver comprehensive fact-checking reports.
@@ -26,7 +21,6 @@ Sherlock is a full-stack content analysis platform that helps users verify the a
 - ⚡ **Real-Time Processing**: Live updates during content analysis
 - 💾 **Smart Caching**: Vector database for faster repeat queries
 - 🌍 **Multilingual**: Automatic language detection and translation
-- 📱 **Responsive Design**: Works on desktop, tablet, and mobile
 
 ## 🏗️ Architecture
 
