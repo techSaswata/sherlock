@@ -94,7 +94,7 @@ export function Footer() {
 
       <div className="md:hidden mt-8 text-center space-y-2">
         <p className="text-muted-foreground text-sm">© {new Date().getFullYear()} Sherlock. All rights reserved.</p>
-        <p className="text-muted-foreground text-xs">Web Development by Humexa</p>
+        <p className="text-muted-foreground text-xs">Team Arcane</p>
       </div>
 
       <div className="hidden md:block mt-8 pt-6 border-t border-foreground/10 w-full">
