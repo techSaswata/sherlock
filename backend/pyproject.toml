@@ -1,0 +1,31 @@
+[project]
+name = "agent"
+version = "0.1.0"
+description = "agent using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[google-genai,tools]==1.2.1",
+    "google-generativeai>=0.8.0",
+    "yt-dlp>=2024.0.0",
+    "instaloader>=4.10.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "beautifulsoup4>=4.14.2",
+    "lxml>=6.0.2",
+]
+
+[project.scripts]
+agent = "agent.main:run"
+run_crew = "agent.main:run"
+train = "agent.main:train"
+replay = "agent.main:replay"
+test = "agent.main:test"
+run_with_trigger = "agent.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

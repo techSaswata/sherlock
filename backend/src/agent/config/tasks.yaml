@@ -1,0 +1,104 @@
+content_analysis_task:
+  description: >
+    Analyze the content from the provided URL: {video_url}
+    
+    IMPORTANT: Determine content type first:
+    - If URL contains youtube.com, youtu.be, instagram.com, or reel: Use video tools
+    - If URL is a blog/article/news site: Use Blog Analyzer tool
+    
+    For VIDEO content:
+    1. Download the video using Video Downloader tool
+    2. Analyze using Gemini Video Analyzer tool
+    3. Extract visual content, audio transcription, and claims
+    
+    For BLOG/ARTICLE content:
+    1. Use Blog Analyzer tool to extract content
+    2. Identify main claims from the text
+    
+    FOCUS: Extract only the TOP 2-3 MOST IMPORTANT claims that need verification.
+    Ignore minor details or opinions. Focus on factual statements that can be verified.
+  expected_output: >
+    A concise analysis containing:
+    - Content type (Video or Blog/Article)
+    - Source URL and metadata
+    - TOP 2-3 most important factual claims (numbered list)
+    - Brief context for each claim
+    
+    Keep it focused and concise - only the claims that matter most.
+  agent: video_analyst
+
+fact_checking_task:
+  description: >
+    Verify ONLY the top 2-3 claims identified in the content analysis.
+    
+    EFFICIENCY RULES:
+    1. Focus ONLY on the most important claims
+    2. Use targeted searches - search for each claim specifically
+    3. Stop searching once you find 2-3 credible sources per claim
+    4. Don't over-research - get enough evidence to make a determination
+    
+    For each claim:
+    1. Do ONE targeted search for the specific claim
+    2. Check 2-3 credible sources (news sites, fact-checkers, official sources)
+    3. Determine: TRUE, FALSE, MISLEADING, or UNVERIFIED
+    4. Move to next claim
+    
+    Be FAST and FOCUSED. Quality over quantity.
+  expected_output: >
+    A focused fact-check analysis containing:
+    
+    For each of the TOP 2-3 claims:
+    - Claim statement
+    - Verification status (TRUE/FALSE/MISLEADING/UNVERIFIED)
+    - 2-3 key pieces of evidence with sources
+    - Source URLs and dates
+    
+    Keep it concise - only essential evidence that supports the verdict.
+  agent: fact_checker
+
+report_generation_task:
+  description: >
+    Create a final fact-check report with EXACTLY these four sections:
+    
+    1. EXPLANATION (3-5 lines): Summarize the main claim and verdict
+    2. EVIDENCE (focused): Only include evidence for the TOP claims
+    3. FINAL VERDICT (ONE sentence): State if the main claim is TRUE or FALSE
+    4. CONFIDENCE SCORE (0-100%): Based on evidence strength
+    
+    KEEP IT CONCISE. Focus on the most important evidence that supports the verdict.
+  expected_output: >
+    A structured fact-check report in markdown format:
+    
+    # Fact-Check Report
+    
+    **Content URL:** {video_url}
+    **Content Type:** [Video/Blog/Article]
+    **Analysis Date:** [Current Date]
+    
+    ## 1. EXPLANATION
+    [Write exactly 3-5 lines: What is the main claim? What did we find? Is it true or false?]
+    
+    ## 2. EVIDENCE
+    
+    ### Claim 1: [Main claim from content]
+    **Status:** [TRUE/FALSE/MISLEADING/UNVERIFIED]
+    
+    **Key Evidence:**
+    [2-3 paragraphs with the most important evidence. Be specific but concise.]
+    
+    **Sources:**
+    - [Source 1] - [URL] (Date)
+    - [Source 2] - [URL] (Date)
+    - [Source 3] - [URL] (Date)
+    
+    [Include Claim 2 only if it's critical to the verdict]
+    
+    ## 3. FINAL VERDICT
+    [ONE sentence: Is the main claim TRUE or FALSE? Be clear and direct.]
+    
+    ## 4. CONFIDENCE SCORE
+    [Number 0-100]%
+    
+    Format as markdown without code blocks. Be concise and focused.
+  agent: report_writer
+  output_file: 'fact_check_report.md'
