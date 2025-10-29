@@ -29,7 +29,7 @@ export function ChatMessage({
         <p className="text-sm text-slate-800">{text}</p>
         <div className={`flex items-center ${isUser ? "justify-end" : "justify-start"} gap-1 mt-1`}>
           {isAI ? (
-            <span className="text-xs text-green-600 font-semibold">Cliste • {time}</span>
+            <span className="text-xs text-green-600 font-semibold">Sherlock • {time}</span>
           ) : (
             <>
               <span className="text-xs text-slate-500">{time}</span>

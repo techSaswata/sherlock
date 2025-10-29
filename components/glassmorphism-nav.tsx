@@ -8,8 +8,8 @@ import Link from "next/link"
 const navigation = [
   { name: "Features", href: "#features" },
   { name: "How It Works", href: "#ai-team" },
+  { name: "Process URL", href: "/process" },
   { name: "Testimonials", href: "#testimonials" },
-  { name: "Pricing", href: "/pricing" },
 ]
 
 export function GlassmorphismNav() {
@@ -122,7 +122,7 @@ export function GlassmorphismNav() {
                 <div className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center">
                   <Image
                     src="/images/cliste-logo.png"
-                    alt="Cliste"
+                    alt="Sherlock"
                     width={40}
                     height={40}
                     className="w-full h-full object-contain"

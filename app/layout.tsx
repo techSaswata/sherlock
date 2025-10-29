@@ -9,7 +9,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Dancing_Script, Caveat, Roboto as V0_Font_Roboto, Playfair_Display as V0_Font_Playfair_Display } from 'next/font/google'
 
 // Initialize fonts
-const _roboto = V0_Font_Roboto({ subsets: ['latin'], weight: ["100","200","300","400","500","600","700","800","900"], variable: '--v0-font-roboto' })
+const _roboto = V0_Font_Roboto({ subsets: ['latin'], weight: ["100","300","400","500","700","900"], variable: '--v0-font-roboto' })
 const _playfairDisplay = V0_Font_Playfair_Display({ subsets: ['latin'], weight: ["400","500","600","700","800","900"], variable: '--v0-font-playfair-display' })
 const _v0_fontVariables = `${_roboto.variable} ${_playfairDisplay.variable}`
 
@@ -26,7 +26,7 @@ const caveat = Caveat({
 })
 
 export const metadata: Metadata = {
-  title: "Cliste - AI Automation for Enterprise",
+  title: "Sherlock - AI Automation for Enterprise",
   description:
     "Transform your business with intelligent AI automation solutions. Empower your organization to operate at the speed of thought.",
   generator: "v0.app",

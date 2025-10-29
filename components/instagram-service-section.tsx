@@ -8,7 +8,7 @@ export function InstagramServiceSection() {
     {
       title: "Service Bookings",
       description:
-        "Clutch By Cliste automatically schedules service appointments and sends confirmations across all channels - website, phone, and social media, customized to your workflow",
+        "Clutch By Sherlock automatically schedules service appointments and sends confirmations across all channels - website, phone, and social media, customized to your workflow",
     },
     {
       title: "Parts Inquiries",

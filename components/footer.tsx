@@ -62,9 +62,9 @@ export function Footer() {
 
       <div className="grid w-full gap-8 xl:grid-cols-3 xl:gap-8">
         <AnimatedContainer className="space-y-4">
-          <Image src="/images/cliste-logo.png" alt="Cliste Logo" width={64} height={64} className="size-16" />
+          <Image src="/images/cliste-logo.png" alt="Sherlock Logo" width={64} height={64} className="size-16" />
           <div className="text-muted-foreground mt-8 text-sm md:mt-0 md:block hidden">
-            <p>© {new Date().getFullYear()} Cliste. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Sherlock. All rights reserved.</p>
           </div>
         </AnimatedContainer>
 
@@ -93,7 +93,7 @@ export function Footer() {
       </div>
 
       <div className="md:hidden mt-8 text-center space-y-2">
-        <p className="text-muted-foreground text-sm">© {new Date().getFullYear()} Cliste. All rights reserved.</p>
+        <p className="text-muted-foreground text-sm">© {new Date().getFullYear()} Sherlock. All rights reserved.</p>
         <p className="text-muted-foreground text-xs">Web Development by Humexa</p>
       </div>
 
@@ -110,11 +110,11 @@ type ViewAnimationProps = {
   children: ReactNode
 }
 
-function AnimatedContainer({ className, delay = 0.1, children }: ViewAnimationProps) {
+function AnimatedContainer({ className, delay = 0.1, children }: ViewAnimationProps): JSX.Element {
   const shouldReduceMotion = useReducedMotion()
 
   if (shouldReduceMotion) {
-    return children
+    return <div className={className}>{children}</div>
   }
 
   return (

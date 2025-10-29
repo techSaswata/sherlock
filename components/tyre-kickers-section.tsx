@@ -8,7 +8,7 @@ export function TyreKickersSection() {
     {
       title: "Instant Answers",
       description:
-        "Clutch By Cliste responds to 50+ common questions about NCT, mileage, trade-ins, and pricing instantly across your website, phone, and social channels",
+        "Clutch By Sherlock responds to 50+ common questions about NCT, mileage, trade-ins, and pricing instantly across your website, phone, and social channels",
     },
     {
       title: "Qualify Leads",
@@ -17,7 +17,7 @@ export function TyreKickersSection() {
     },
     {
       title: "Save Time",
-      description: "Stop answering the same questions repeatedly - let Clutch By Cliste handle the tire kickers",
+      description: "Stop answering the same questions repeatedly - let Clutch By Sherlock handle the tire kickers",
     },
     {
       title: "24/7 Availability",

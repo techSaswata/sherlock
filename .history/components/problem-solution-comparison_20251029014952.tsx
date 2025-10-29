@@ -107,12 +107,12 @@ export function ProblemSolutionComparison() {
                     </th>
                     <th className="text-left py-6 px-6">
                       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 border-l-4 border-red-500">
-                        <span className="text-red-600 font-semibold">Without Sherlock</span>
+                        <span className="text-red-600 font-semibold">Without Cliste</span>
                       </div>
                     </th>
                     <th className="text-left py-6 px-6">
                       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-50 border-l-4 border-green-500">
-                        <span className="text-green-600 font-semibold">With Sherlock</span>
+                        <span className="text-green-600 font-semibold">With Cliste</span>
                       </div>
                     </th>
                   </tr>
