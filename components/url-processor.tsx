@@ -596,7 +596,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                   </div>
 
                   {/* Example URLs */}
-                  <div className="mt-6 pt-6 border-t border-white/10">
+                  {/* <div className="mt-6 pt-6 border-t border-white/10">
                     <p className="text-sm text-white/50 mb-3">Try with example URLs:</p>
                     <div className="flex flex-wrap gap-2">
                       {[
@@ -614,7 +614,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               </form>
             </motion.div>
