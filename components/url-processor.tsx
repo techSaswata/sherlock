@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Link2, CheckCircle2, Loader2, Instagram, Youtube, Globe, Image as ImageIcon, Video, Sparkles, Zap, Brain, Search, Download, SplitSquareHorizontal, Scan, MessageSquare, Music, FileText } from "lucide-react"
+import { Link2, CheckCircle2, Loader2, Instagram, Youtube, Globe, Image as ImageIcon, Video, Sparkles, Zap, Brain, Search, Download, SplitSquareHorizontal, Scan, MessageSquare, Music, FileText, AlertCircle, TrendingUp, Target, BarChart3 } from "lucide-react"
 import { ProcessingBackground } from "./processing-background"
 
 type ContentType = "instagram-reel" | "instagram-post" | "youtube-video" | "blog-website" | null
@@ -20,6 +20,16 @@ interface URLProcessorProps {
   onProcessingChange?: (isProcessing: boolean) => void
 }
 
+interface ReportData {
+  summary?: string
+  authenticity_score?: number
+  key_findings?: string[]
+  claims?: Array<{ claim: string; verified: boolean; confidence: number }>
+  sentiment?: string
+  recommendations?: string[]
+  [key: string]: any
+}
+
 export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const [url, setUrl] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
@@ -28,25 +38,17 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const [steps, setSteps] = useState<ProcessStep[]>([])
   const [scanProgress, setScanProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ id: string; message: string; timestamp: string; type: 'info' | 'success' | 'warning' }>>([])
+  const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [backendResponse, setBackendResponse] = useState<any>(null)
   const completionRef = useRef<HTMLDivElement>(null)
-  const wsRef = useRef<WebSocket | null>(null)
 
-  // WebSocket configuration - Update this with your backend URL
-  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws'
+  // Backend API configuration
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/analyze'
 
   // Notify parent component when processing state changes
   useEffect(() => {
     onProcessingChange?.(isProcessing)
   }, [isProcessing, onProcessingChange])
-
-  // Cleanup WebSocket on unmount
-  useEffect(() => {
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-    }
-  }, [])
 
   // Auto-scroll to completion section when all steps are done
   useEffect(() => {
@@ -86,104 +88,154 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
-  // WebSocket connection handler
-  const connectWebSocket = (url: string) => {
-    return new Promise<void>((resolve, reject) => {
-      try {
-        const ws = new WebSocket(WS_URL)
-        wsRef.current = ws
+  // Parse markdown report to extract structured data
+  const parseMarkdownReport = (markdown: string): ReportData => {
+    const report: ReportData = {
+      key_findings: [],
+      claims: [],
+      recommendations: []
+    }
 
-        ws.onopen = () => {
-          addLog('🔗 Connected to processing server', 'success')
-          // Send URL to backend for processing
-          ws.send(JSON.stringify({ 
-            type: 'process_url', 
-            url: url,
-            timestamp: new Date().toISOString()
-          }))
-          resolve()
-        }
+    // Extract EXPLANATION section as summary
+    const explanationMatch = markdown.match(/## 1\. EXPLANATION\n([\s\S]*?)(?=\n## |$)/i)
+    if (explanationMatch) {
+      report.summary = explanationMatch[1].trim()
+    }
 
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data)
-            handleWebSocketMessage(data)
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error)
-          }
-        }
+    // Extract CONFIDENCE SCORE
+    const confidenceMatch = markdown.match(/## 4\. CONFIDENCE SCORE\n(\d+)%/i)
+    if (confidenceMatch) {
+      report.authenticity_score = parseInt(confidenceMatch[1]) / 100
+    }
 
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error)
-          addLog('❌ Connection error occurred', 'warning')
-          reject(error)
-        }
-
-        ws.onclose = () => {
-          addLog('🔌 Disconnected from server', 'info')
-          wsRef.current = null
-        }
-
-      } catch (error) {
-        console.error('Error creating WebSocket:', error)
-        reject(error)
+    // Extract FINAL VERDICT for sentiment
+    const verdictMatch = markdown.match(/## 3\. FINAL VERDICT\n([\s\S]*?)(?=\n## |$)/i)
+    if (verdictMatch) {
+      const verdictText = verdictMatch[1].toLowerCase()
+      if (verdictText.includes('false') || verdictText.includes('misleading')) {
+        report.sentiment = 'negative'
+      } else if (verdictText.includes('true') || verdictText.includes('verified')) {
+        report.sentiment = 'positive'
+      } else {
+        report.sentiment = 'neutral'
       }
-    })
+    }
+
+    // Extract claims from EVIDENCE section
+    const claimRegex = /### Claim \d+: (.*?)\n\*\*Status:\*\* (TRUE|FALSE|UNVERIFIED)([\s\S]*?)(?=\n### Claim |\n## |$)/gi
+    let claimMatch
+    while ((claimMatch = claimRegex.exec(markdown)) !== null) {
+      const claim = claimMatch[1].trim()
+      const status = claimMatch[2].toUpperCase()
+      const evidenceText = claimMatch[3] || ''
+      
+      // Try to extract confidence from Key Evidence or other indicators
+      let confidence = 0.85 // default
+      if (status === 'TRUE') confidence = 0.95
+      else if (status === 'FALSE') confidence = 0.90
+      else confidence = 0.50
+
+      report.claims?.push({
+        claim: claim,
+        verified: status === 'TRUE',
+        confidence: confidence
+      })
+
+      // Extract key evidence as findings
+      const keyEvidenceMatch = evidenceText.match(/\*\*Key Evidence:\*\* ([\s\S]*?)(?=\n\*\*|$)/)
+      if (keyEvidenceMatch) {
+        report.key_findings?.push(keyEvidenceMatch[1].trim())
+      }
+    }
+
+    // If no claims found via regex, try to extract from evidence section more broadly
+    if (report.claims?.length === 0) {
+      const evidenceMatch = markdown.match(/## 2\. EVIDENCE\n([\s\S]*?)(?=\n## |$)/i)
+      if (evidenceMatch) {
+        const evidenceText = evidenceMatch[1]
+        // Extract key evidence bullets as findings
+        const bulletMatch = evidenceText.match(/\*\*Key Evidence:\*\* ([\s\S]*?)(?=\n\*\*|$)/)
+        if (bulletMatch) {
+          const findings = bulletMatch[1]
+            .split(/[.;]/)
+            .map(f => f.trim())
+            .filter(f => f.length > 20)
+          
+          report.key_findings?.push(...findings)
+        }
+      }
+    }
+
+    // Generate recommendations based on verdict
+    if (report.sentiment === 'negative') {
+      report.recommendations = [
+        'Content appears to be AI-generated or manipulated',
+        'Verify information with trusted sources before sharing',
+        'Look for official statements or authoritative sources',
+        'Be cautious of similar content from this source'
+      ]
+    } else if (report.sentiment === 'neutral') {
+      report.recommendations = [
+        'Cross-reference with multiple reliable sources',
+        'Check for official verification or fact-check websites',
+        'Consider the source\'s credibility and track record'
+      ]
+    } else {
+      report.recommendations = [
+        'Content appears authentic based on available evidence',
+        'Still verify critical claims through official sources',
+        'Monitor for updates or corrections to the information'
+      ]
+    }
+
+    return report
   }
 
-  // Handle incoming WebSocket messages
-  const handleWebSocketMessage = (data: any) => {
-    switch (data.type) {
-      case 'step_start':
-        const stepIndex = data.step_index
-        if (stepIndex !== undefined && steps[stepIndex]) {
-          setSteps((prev) =>
-            prev.map((step, index) => ({
-              ...step,
-              active: index === stepIndex,
-              completed: index < stepIndex,
-            }))
-          )
-          setCurrentStep(stepIndex)
-          addLog(`⚡ ${data.message || steps[stepIndex].label}`, 'info')
-          
-          // Auto-start progress simulation for scanning step
-          if (steps[stepIndex]?.id === 'scanning') {
-            simulateProgress()
-          }
-        }
-        break
+  // Submit URL to backend via POST request
+  const submitToBackend = async (url: string, contentType: ContentType) => {
+    try {
+      addLog('📡 Sending request to backend...', 'info')
+      
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: url
+        })
+      })
 
-      case 'step_complete':
-        if (data.step_index !== undefined) {
-          addLog(`✓ ${data.message || 'Step completed'}`, 'success')
-        }
-        break
+      if (!response.ok) {
+        throw new Error(`Backend error: ${response.statusText}`)
+      }
 
-      case 'log':
-        addLog(data.message, data.log_type || 'info')
-        break
-
-      case 'processing_complete':
-        setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
-        addLog('🎉 Processing completed successfully!', 'success')
-        addLog('📄 Report generated and ready for review', 'success')
+      const data = await response.json()
+      
+      // Handle the new response format: { success, message, result, error }
+      if (data.success && data.result) {
+        addLog('✓ Backend analysis complete', 'success')
         
-        if (wsRef.current) {
-          wsRef.current.close()
+        // Parse the markdown result into structured report data
+        const parsedReport = parseMarkdownReport(data.result)
+        
+        return {
+          success: data.success,
+          message: data.message,
+          result: data.result, // Keep original markdown
+          report: parsedReport // Add parsed structured data
         }
-        break
-
-      case 'error':
-        addLog(`❌ Error: ${data.message}`, 'warning')
-        setIsProcessing(false)
-        if (wsRef.current) {
-          wsRef.current.close()
-        }
-        break
-
-      default:
-        console.log('Unknown message type:', data.type)
+      } else if (data.error) {
+        addLog(`⚠️ Backend error: ${data.error}`, 'warning')
+        return null
+      } else {
+        addLog('✓ Backend processing complete', 'success')
+        return data
+      }
+    } catch (error) {
+      console.error('Backend request error:', error)
+      addLog('⚠️ Backend unavailable, running in demo mode', 'warning')
+      return null
     }
   }
 
@@ -268,6 +320,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setCurrentStep(0)
     setScanProgress(0)
     setLogs([])
+    setReportData(null)
+    setBackendResponse(null)
 
     addLog('🚀 Initializing content processor...', 'info')
 
@@ -281,26 +335,41 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setSteps(processSteps)
     addLog(`📋 Generated ${processSteps.length} processing steps`, 'info')
 
+    // Submit to backend immediately (non-blocking)
+    const backendPromise = submitToBackend(url, type)
+
+    // Run simulation mode while backend processes - pass steps directly
+    await runSimulationMode(processSteps)
+
+    // Wait for backend response and display results
     try {
-      // Try WebSocket connection for real-time processing
-      await connectWebSocket(url)
-      // Processing will be handled by WebSocket messages
+      const backendData = await backendPromise
+      if (backendData && backendData.report) {
+        setBackendResponse(backendData)
+        setReportData(backendData.report)
+        if (backendData.message) {
+          addLog(`📊 ${backendData.message}`, 'success')
+        }
+      } else if (backendData) {
+        // Fallback for other response formats
+        setBackendResponse(backendData)
+        setReportData(backendData.report || backendData)
+      }
     } catch (error) {
-      // Fallback to simulation mode if WebSocket fails
-      addLog('⚠️ Real-time connection unavailable, using simulation mode', 'warning')
-      await runSimulationMode()
+      console.error('Error receiving backend data:', error)
+      addLog('❌ Error processing backend response', 'warning')
     }
   }
 
   // Fallback simulation mode
-  const runSimulationMode = async () => {
+  const runSimulationMode = async (processSteps: ProcessStep[]) => {
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     // Simulate processing steps (content type already detected)
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = 0; i < processSteps.length; i++) {
       await new Promise((resolve) => setTimeout(resolve, i === 0 ? 800 : 1500))
 
-      addLog(`⚡ ${steps[i].label}...`, 'info')
+      addLog(`⚡ ${processSteps[i].label}...`, 'info')
 
       setSteps((prev) =>
         prev.map((step, index) => ({
@@ -312,7 +381,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       setCurrentStep(i)
 
       // Special handling for scanning frames step with progress bar
-      if (steps[i].id === "scanning") {
+      if (processSteps[i].id === "scanning") {
         for (let progress = 0; progress <= 100; progress += 5) {
           await new Promise((resolve) => setTimeout(resolve, 50))
           setScanProgress(progress)
@@ -327,7 +396,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         }
       }
       
-      addLog(`✓ ${steps[i].label} completed`, 'success')
+      addLog(`✓ ${processSteps[i].label} completed`, 'success')
     }
 
     // Mark all as completed
@@ -350,6 +419,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setSteps([])
     setScanProgress(0)
     setLogs([])
+    setReportData(null)
+    setBackendResponse(null)
   }
 
   // Get visible steps (previous, current, next)
@@ -790,37 +861,245 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                   ))}
                 </div>
 
-                {/* Completion Message */}
+                {/* Completion Message and Report */}
                 {steps.length > 0 && steps.every((s) => s.completed) && (
                   <motion.div
                     ref={completionRef}
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     transition={{ delay: 0.3, type: "spring" }}
-                    className="relative z-10 mt-12 p-6 bg-primary/10 border border-primary/30 rounded-2xl backdrop-blur-sm"
+                    className="relative z-10 mt-12 space-y-6"
                   >
-                    <div className="flex items-center gap-3 mb-3">
-                      <motion.div
-                        animate={{ rotate: [0, 360] }}
-                        transition={{ duration: 0.6 }}
-                      >
-                        <CheckCircle2 className="w-6 h-6 text-primary" />
-                      </motion.div>
-                      <h3 className="text-xl font-semibold text-white">Processing Complete!</h3>
+                    {/* Success Banner */}
+                    <div className="p-6 bg-primary/10 border border-primary/30 rounded-2xl backdrop-blur-sm">
+                      <div className="flex items-center gap-3 mb-3">
+                        <motion.div
+                          animate={{ rotate: [0, 360] }}
+                          transition={{ duration: 0.6 }}
+                        >
+                          <CheckCircle2 className="w-6 h-6 text-primary" />
+                        </motion.div>
+                        <h3 className="text-xl font-semibold text-white">Processing Complete!</h3>
+                      </div>
+                      <p className="text-white/70 mb-4">
+                        Your content has been successfully analyzed and a comprehensive report has been generated.
+                      </p>
                     </div>
-                    <p className="text-white/70 mb-4">
-                      Your content has been successfully analyzed and a comprehensive report has been generated.
-                    </p>
+
+                    {/* Report Analysis Display */}
+                    {reportData && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="space-y-6"
+                      >
+                        {/* Report Header */}
+                        <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="p-3 bg-primary/20 rounded-xl">
+                              <FileText className="w-6 h-6 text-primary" />
+                            </div>
+                            <div>
+                              <h2 className="text-2xl font-bold text-white">Analysis Report</h2>
+                              <p className="text-white/60 text-sm">AI-powered content intelligence</p>
+                            </div>
+                          </div>
+
+                          {/* Authenticity Score */}
+                          {reportData.authenticity_score !== undefined && (
+                            <div className="mb-6 p-4 bg-black/20 rounded-xl">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Target className="w-5 h-5 text-primary" />
+                                  <span className="text-white font-semibold">Authenticity Score</span>
+                                </div>
+                                <span className="text-2xl font-bold text-primary">
+                                  {Math.round(reportData.authenticity_score * 100)}%
+                                </span>
+                              </div>
+                              <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
+                                <motion.div
+                                  className="absolute inset-y-0 left-0 bg-gradient-to-r from-primary to-green-400 rounded-full"
+                                  initial={{ width: "0%" }}
+                                  animate={{ width: `${reportData.authenticity_score * 100}%` }}
+                                  transition={{ duration: 1, delay: 0.8 }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Summary */}
+                          {reportData.summary && (
+                            <div className="mb-6">
+                              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                                <Brain className="w-5 h-5 text-primary" />
+                                Summary
+                              </h3>
+                              <p className="text-white/80 leading-relaxed">{reportData.summary}</p>
+                            </div>
+                          )}
+
+                          {/* Sentiment */}
+                          {reportData.sentiment && (
+                            <div className="mb-6 p-4 bg-black/20 rounded-xl">
+                              <div className="flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-primary" />
+                                <span className="text-white/70 font-medium">Sentiment:</span>
+                                <span className="text-white font-semibold capitalize">{reportData.sentiment}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Key Findings */}
+                        {reportData.key_findings && reportData.key_findings.length > 0 && (
+                          <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                              <Sparkles className="w-5 h-5 text-primary" />
+                              Key Findings
+                            </h3>
+                            <div className="space-y-3">
+                              {reportData.key_findings.map((finding, index) => (
+                                <motion.div
+                                  key={index}
+                                  initial={{ opacity: 0, x: -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 0.8 + index * 0.1 }}
+                                  className="flex items-start gap-3 p-3 bg-black/20 rounded-xl"
+                                >
+                                  <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                                  <p className="text-white/80">{finding}</p>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Claims Verification */}
+                        {reportData.claims && reportData.claims.length > 0 && (
+                          <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                              <BarChart3 className="w-5 h-5 text-primary" />
+                              Claims Verification
+                            </h3>
+                            <div className="space-y-3">
+                              {reportData.claims.map((claim, index) => (
+                                <motion.div
+                                  key={index}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 1 + index * 0.1 }}
+                                  className="p-4 bg-black/20 rounded-xl"
+                                >
+                                  <div className="flex items-start justify-between gap-4 mb-2">
+                                    <p className="text-white/80 flex-1">{claim.claim}</p>
+                                    <div className="flex items-center gap-2">
+                                      {claim.verified ? (
+                                        <CheckCircle2 className="w-5 h-5 text-primary" />
+                                      ) : (
+                                        <AlertCircle className="w-5 h-5 text-yellow-500" />
+                                      )}
+                                      <span className={`text-sm font-semibold ${claim.verified ? 'text-primary' : 'text-yellow-500'}`}>
+                                        {claim.verified ? 'Verified' : 'Unverified'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-white/60">
+                                    <span>Confidence:</span>
+                                    <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden max-w-[100px]">
+                                      <div
+                                        className="h-full bg-primary rounded-full"
+                                        style={{ width: `${claim.confidence * 100}%` }}
+                                      />
+                                    </div>
+                                    <span className="font-medium">{Math.round(claim.confidence * 100)}%</span>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Recommendations */}
+                        {reportData.recommendations && reportData.recommendations.length > 0 && (
+                          <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                              <Zap className="w-5 h-5 text-primary" />
+                              Recommendations
+                            </h3>
+                            <div className="space-y-2">
+                              {reportData.recommendations.map((rec, index) => (
+                                <motion.div
+                                  key={index}
+                                  initial={{ opacity: 0, x: -20 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 1.2 + index * 0.1 }}
+                                  className="flex items-start gap-3 p-3 bg-black/20 rounded-xl"
+                                >
+                                  <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                    <span className="text-primary text-sm font-bold">{index + 1}</span>
+                                  </div>
+                                  <p className="text-white/80">{rec}</p>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Markdown Report (collapsible) */}
+                        {backendResponse?.result && (
+                          <details className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <summary className="text-white font-semibold cursor-pointer hover:text-primary transition-colors">
+                              View Full Detailed Report
+                            </summary>
+                            <div className="mt-4 p-4 bg-black/40 rounded-xl overflow-x-auto">
+                              <pre className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">
+                                {backendResponse.result}
+                              </pre>
+                            </div>
+                          </details>
+                        )}
+
+                        {/* Raw Data (collapsible) */}
+                        {backendResponse && Object.keys(backendResponse).length > 0 && (
+                          <details className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <summary className="text-white font-semibold cursor-pointer hover:text-primary transition-colors">
+                              View Raw JSON Data
+                            </summary>
+                            <pre className="mt-4 p-4 bg-black/40 rounded-xl overflow-x-auto text-xs text-white/70">
+                              {JSON.stringify(backendResponse, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {/* Action Buttons */}
                     <div className="flex gap-3">
-                      <button className="flex-1 bg-primary hover:bg-primary/90 text-black font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-[1.02]">
-                        View Report
-                      </button>
                       <button
                         onClick={resetForm}
-                        className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-[1.02]"
+                        className="flex-1 bg-primary hover:bg-primary/90 text-black font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-[1.02]"
                       >
-                        Process Another
+                        Process Another URL
                       </button>
+                      {reportData && (
+                        <button
+                          onClick={() => {
+                            const dataStr = JSON.stringify(reportData, null, 2)
+                            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
+                            const exportFileDefaultName = `report-${Date.now()}.json`
+                            const linkElement = document.createElement('a')
+                            linkElement.setAttribute('href', dataUri)
+                            linkElement.setAttribute('download', exportFileDefaultName)
+                            linkElement.click()
+                          }}
+                          className="flex-1 bg-white/10 hover:bg-white/20 text-white font-semibold py-3 rounded-xl transition-all duration-300 hover:scale-[1.02] flex items-center justify-center gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Report
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 )}
