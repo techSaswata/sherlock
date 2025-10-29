@@ -208,7 +208,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
           url: url
         })
       }).catch(error => {
-        console.error('Backend request error:', error)
+        // console.error('Backend request error:', error)
       })
 
       addLog('✓ Request sent to backend', 'success')
