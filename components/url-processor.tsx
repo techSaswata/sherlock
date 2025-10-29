@@ -251,8 +251,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
             return
           }
 
-          // Check if we have content
-          if (data && data.url_content) {
+          // Check if we have completed content
+          if (data && data.url_status === 'completed' && data.url_content) {
             clearInterval(pollInterval)
             addLog('✅ Results found in database!', 'success')
             
@@ -270,6 +270,16 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
             } else {
               resolve(content)
             }
+          } else if (data && data.url_status === 'processing') {
+            // Still processing, log periodically
+            if (attempts % 15 === 0) {
+              addLog(`⏳ Analysis in progress... (${Math.floor(attempts * 2 / 60)} min ${(attempts * 2) % 60} sec)`, 'info')
+            }
+          } else if (data && data.url_status === 'error') {
+            // Error occurred
+            clearInterval(pollInterval)
+            addLog('❌ Analysis failed - check backend logs', 'warning')
+            resolve(null)
           }
 
           // Check if max attempts reached

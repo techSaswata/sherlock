@@ -135,9 +135,14 @@ async def analyze_content(request: dict):
 The frontend polls every **2 seconds** for up to **10 minutes** (300 attempts):
 
 1. **Query**: `SELECT * FROM video_analysis WHERE url = ? ORDER BY inserted_at DESC LIMIT 1`
-2. **Check**: If `url_content` is not null, results are ready
+2. **Check Status**: Verifies `url_status === 'completed'` AND `url_content` is not null
 3. **Parse**: Extract and display the markdown report
-4. **Timeout**: After 10 minutes, stop polling
+4. **Status Handling**:
+   - `processing`: Continues polling, shows progress updates
+   - `completed`: Retrieves and displays results
+   - `error`: Stops polling, shows error message
+   - `pending`: Continues polling silently
+5. **Timeout**: After 10 minutes, stop polling
 
 ### Polling Status Logs
 

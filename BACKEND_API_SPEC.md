@@ -172,10 +172,20 @@ ORDER BY inserted_at DESC
 LIMIT 1;
 ```
 
-When `url_content` is not null, the frontend:
+When a record is found, the frontend checks:
+1. ✅ **`url_status === 'completed'`** - Only completed analyses are processed
+2. ✅ **`url_content` is not null** - Ensures data is available
+
+If both conditions are met:
 1. Stops polling
 2. Parses the markdown `result`
 3. Displays the comprehensive report
+
+**Status Handling:**
+- `processing`: Continues polling, shows progress updates every 30s
+- `completed`: Retrieves and displays results immediately
+- `error`: Stops polling, shows error message
+- `pending`: Continues polling silently
 
 **Polling Duration**: Up to 10 minutes (300 attempts × 2 seconds)
 
