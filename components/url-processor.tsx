@@ -29,11 +29,24 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const [scanProgress, setScanProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ id: string; message: string; timestamp: string; type: 'info' | 'success' | 'warning' }>>([])
   const completionRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  // WebSocket configuration - Update this with your backend URL
+  const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws'
 
   // Notify parent component when processing state changes
   useEffect(() => {
     onProcessingChange?.(isProcessing)
   }, [isProcessing, onProcessingChange])
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+    }
+  }, [])
 
   // Auto-scroll to completion section when all steps are done
   useEffect(() => {
@@ -60,6 +73,118 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       timestamp, 
       type 
     }])
+  }
+
+  // Simulate progress bar for scanning step (frontend-only)
+  const simulateProgress = async () => {
+    for (let progress = 0; progress <= 100; progress += 5) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      setScanProgress(progress)
+      if (progress % 20 === 0 && progress > 0) {
+        addLog(`📊 Scanning progress: ${progress}%`, 'info')
+      }
+    }
+  }
+
+  // WebSocket connection handler
+  const connectWebSocket = (url: string) => {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        const ws = new WebSocket(WS_URL)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          addLog('🔗 Connected to processing server', 'success')
+          // Send URL to backend for processing
+          ws.send(JSON.stringify({ 
+            type: 'process_url', 
+            url: url,
+            timestamp: new Date().toISOString()
+          }))
+          resolve()
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            handleWebSocketMessage(data)
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error)
+          }
+        }
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+          addLog('❌ Connection error occurred', 'warning')
+          reject(error)
+        }
+
+        ws.onclose = () => {
+          addLog('🔌 Disconnected from server', 'info')
+          wsRef.current = null
+        }
+
+      } catch (error) {
+        console.error('Error creating WebSocket:', error)
+        reject(error)
+      }
+    })
+  }
+
+  // Handle incoming WebSocket messages
+  const handleWebSocketMessage = (data: any) => {
+    switch (data.type) {
+      case 'step_start':
+        const stepIndex = data.step_index
+        if (stepIndex !== undefined && steps[stepIndex]) {
+          setSteps((prev) =>
+            prev.map((step, index) => ({
+              ...step,
+              active: index === stepIndex,
+              completed: index < stepIndex,
+            }))
+          )
+          setCurrentStep(stepIndex)
+          addLog(`⚡ ${data.message || steps[stepIndex].label}`, 'info')
+          
+          // Auto-start progress simulation for scanning step
+          if (steps[stepIndex]?.id === 'scanning') {
+            simulateProgress()
+          }
+        }
+        break
+
+      case 'step_complete':
+        if (data.step_index !== undefined) {
+          addLog(`✓ ${data.message || 'Step completed'}`, 'success')
+        }
+        break
+
+      case 'log':
+        addLog(data.message, data.log_type || 'info')
+        break
+
+      case 'processing_complete':
+        setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
+        addLog('🎉 Processing completed successfully!', 'success')
+        addLog('📄 Report generated and ready for review', 'success')
+        
+        if (wsRef.current) {
+          wsRef.current.close()
+        }
+        break
+
+      case 'error':
+        addLog(`❌ Error: ${data.message}`, 'warning')
+        setIsProcessing(false)
+        if (wsRef.current) {
+          wsRef.current.close()
+        }
+        break
+
+      default:
+        console.log('Unknown message type:', data.type)
+    }
   }
 
   const identifyContentType = (url: string): ContentType => {
@@ -145,9 +270,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setLogs([])
 
     addLog('🚀 Initializing content processor...', 'info')
-    await new Promise((resolve) => setTimeout(resolve, 300))
 
-    // Identify content type
+    // Identify content type in frontend
     const type = identifyContentType(url)
     setContentType(type)
     addLog(`✓ Detected content type: ${getContentTypeLabel(type)}`, 'success')
@@ -157,18 +281,26 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setSteps(processSteps)
     addLog(`📋 Generated ${processSteps.length} processing steps`, 'info')
 
-    // TODO: Make actual API call to backend
-    // const response = await fetch('/api/process', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ url })
-    // })
+    try {
+      // Try WebSocket connection for real-time processing
+      await connectWebSocket(url)
+      // Processing will be handled by WebSocket messages
+    } catch (error) {
+      // Fallback to simulation mode if WebSocket fails
+      addLog('⚠️ Real-time connection unavailable, using simulation mode', 'warning')
+      await runSimulationMode()
+    }
+  }
 
-    // Simulate processing steps
-    for (let i = 0; i < processSteps.length; i++) {
+  // Fallback simulation mode
+  const runSimulationMode = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    // Simulate processing steps (content type already detected)
+    for (let i = 0; i < steps.length; i++) {
       await new Promise((resolve) => setTimeout(resolve, i === 0 ? 800 : 1500))
 
-      addLog(`⚡ ${processSteps[i].label}...`, 'info')
+      addLog(`⚡ ${steps[i].label}...`, 'info')
 
       setSteps((prev) =>
         prev.map((step, index) => ({
@@ -180,7 +312,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       setCurrentStep(i)
 
       // Special handling for scanning frames step with progress bar
-      if (processSteps[i].id === "scanning") {
+      if (steps[i].id === "scanning") {
         for (let progress = 0; progress <= 100; progress += 5) {
           await new Promise((resolve) => setTimeout(resolve, 50))
           setScanProgress(progress)
@@ -195,7 +327,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         }
       }
       
-      addLog(`✓ ${processSteps[i].label} completed`, 'success')
+      addLog(`✓ ${steps[i].label} completed`, 'success')
     }
 
     // Mark all as completed
@@ -203,12 +335,6 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
     addLog('🎉 Processing completed successfully!', 'success')
     addLog('📄 Report generated and ready for review', 'success')
-    
-    // TODO: Handle the response from backend
-    // const result = await response.json()
-    
-    // Keep processing view open until user clicks "Process Another"
-    // setIsProcessing will be set to false only in resetForm()
   }
 
   const handleSubmit = (e: React.FormEvent) => {
