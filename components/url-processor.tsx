@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Link2, CheckCircle2, Loader2, Instagram, Youtube, Globe, Image as ImageIcon, Video, Sparkles, Zap, Brain, Search, Download, SplitSquareHorizontal, Scan, MessageSquare, Music, FileText, AlertCircle, TrendingUp, Target, BarChart3 } from "lucide-react"
 import { ProcessingBackground } from "./processing-background"
+import { supabase } from "@/lib/supabase"
 
 type ContentType = "instagram-reel" | "instagram-post" | "youtube-video" | "blog-website" | null
 
@@ -192,12 +193,13 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     return report
   }
 
-  // Submit URL to backend via POST request
+  // Submit URL to backend via POST request (fire and forget)
   const submitToBackend = async (url: string, contentType: ContentType) => {
     try {
       addLog('📡 Sending request to backend...', 'info')
       
-      const response = await fetch(API_URL, {
+      // Fire and forget - don't wait for response
+      fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -205,40 +207,82 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         body: JSON.stringify({
           url: url
         })
+      }).catch(error => {
+        console.error('Backend request error:', error)
       })
 
-      if (!response.ok) {
-        throw new Error(`Backend error: ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      
-      // Handle the new response format: { success, message, result, error }
-      if (data.success && data.result) {
-        addLog('✓ Backend analysis complete', 'success')
-        
-        // Parse the markdown result into structured report data
-        const parsedReport = parseMarkdownReport(data.result)
-        
-        return {
-          success: data.success,
-          message: data.message,
-          result: data.result, // Keep original markdown
-          report: parsedReport // Add parsed structured data
-        }
-      } else if (data.error) {
-        addLog(`⚠️ Backend error: ${data.error}`, 'warning')
-        return null
-      } else {
-        addLog('✓ Backend processing complete', 'success')
-        return data
-      }
+      addLog('✓ Request sent to backend', 'success')
     } catch (error) {
       console.error('Backend request error:', error)
-      addLog('📡 Connecting to backend server...', 'info')
-      addLog('⏳ This may take a moment as the server starts up.', 'info')
-      return null
+      addLog('⚠️ Error sending request', 'warning')
     }
+  }
+
+  // Poll Supabase database for results
+  const pollDatabaseForResults = async (url: string): Promise<any> => {
+    const maxAttempts = 300 // 10 minutes = 300 attempts (every 2 seconds)
+    let attempts = 0
+
+    addLog('🔍 compiling the final report...', 'info')
+
+    return new Promise((resolve) => {
+      const pollInterval = setInterval(async () => {
+        attempts++
+
+        try {
+          // Query Supabase for the URL
+          const { data, error } = await supabase
+            .from('video_analysis')
+            .select('*')
+            .eq('url', url)
+            .order('inserted_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (error) {
+            if (error.code === 'PGRST116') {
+              // No rows found, continue polling
+              if (attempts % 15 === 0) { // Log every 30 seconds
+                addLog(`⏳ Still waiting for results... (${Math.floor(attempts * 2 / 60)} min ${(attempts * 2) % 60} sec)`, 'info')
+              }
+              return
+            }
+            console.error('Supabase error:', error)
+            return
+          }
+
+          // Check if we have content
+          if (data && data.url_content) {
+            clearInterval(pollInterval)
+            addLog('✅ Results found in database!', 'success')
+            
+            // Parse the result
+            const content = data.url_content
+            if (content.result) {
+              const parsedReport = parseMarkdownReport(content.result)
+              resolve({
+                success: true,
+                message: content.message || 'Analysis completed',
+                result: content.result,
+                report: parsedReport,
+                status: data.url_status
+              })
+            } else {
+              resolve(content)
+            }
+          }
+
+          // Check if max attempts reached
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval)
+            addLog('⏰ Polling timeout reached', 'warning')
+            resolve(null)
+          }
+        } catch (err) {
+          console.error('Polling error:', err)
+        }
+      }, 2000) // Poll every 2 seconds
+    })
   }
 
   const identifyContentType = (url: string): ContentType => {
@@ -363,15 +407,16 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setSteps(processSteps)
     addLog(`📋 Generated ${processSteps.length} processing steps`, 'info')
 
-    // Submit to backend immediately (non-blocking)
-    const backendPromise = submitToBackend(url, type)
+    // Submit to backend (fire and forget)
+    await submitToBackend(url, type)
 
     // Run simulation mode while backend processes - pass steps directly
     await runSimulationMode(processSteps)
 
-    // Wait for backend response and display results
+    // Start polling database for results
     try {
-      const backendData = await backendPromise
+      const backendData = await pollDatabaseForResults(url)
+      
       if (backendData && backendData.report) {
         setBackendResponse(backendData)
         setReportData(backendData.report)
@@ -387,9 +432,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         addLog('🎉 Analysis completed successfully!', 'success')
         addLog('📄 Report generated and ready for review', 'success')
       } else {
-        // No backend data received after waiting
-        addLog('⚠️ Backend took longer than expected. The analysis is still processing.', 'warning')
-        addLog('💡 You can check back later or contact support if this persists.', 'info')
+        // No data received after polling timeout
+        addLog('⏳ compiling the final report...', 'info')
       }
     } catch (error) {
       console.error('Error receiving backend data:', error)
@@ -441,8 +485,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
 
     // Mark all processing steps as completed
     setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
-    addLog('⏳ Processing complete. Waiting for backend analysis...', 'info')
-    addLog('🔍 Backend is analyzing the content. This may take up to 10 minutes.', 'info')
+    addLog('📝 Compiling into report...', 'info')
+    addLog('🔍 Backend is finalizing the analysis. This may take up to 10 minutes.', 'info')
     addLog('⚠️ Please keep this page open while we process your request.', 'warning')
   }
 
@@ -916,10 +960,10 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                       >
                         <Loader2 className="w-6 h-6 text-primary" />
                       </motion.div>
-                      <h3 className="text-lg font-semibold text-white">Backend Analysis in Progress...</h3>
+                      <h3 className="text-lg font-semibold text-white">Compiling Report...</h3>
                     </div>
                     <p className="text-white/80 mb-3">
-                      Our AI is performing deep content analysis. This process can take up to 10 minutes depending on the complexity of the content.
+                      Our AI is finalizing the comprehensive fact-check report. This process can take up to 10 minutes depending on the complexity of the content.
                     </p>
                     <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                       <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
@@ -941,18 +985,18 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                   >
                     {/* Success Banner */}
                     <div className="p-6 bg-primary/10 border border-primary/30 rounded-2xl backdrop-blur-sm">
-                      <div className="flex items-center gap-3 mb-3">
-                        <motion.div
-                          animate={{ rotate: [0, 360] }}
-                          transition={{ duration: 0.6 }}
-                        >
-                          <CheckCircle2 className="w-6 h-6 text-primary" />
-                        </motion.div>
-                        <h3 className="text-xl font-semibold text-white">Processing Complete!</h3>
-                      </div>
-                      <p className="text-white/70 mb-4">
-                        Your content has been successfully analyzed and a comprehensive report has been generated.
-                      </p>
+                    <div className="flex items-center gap-3 mb-3">
+                      <motion.div
+                        animate={{ rotate: [0, 360] }}
+                        transition={{ duration: 0.6 }}
+                      >
+                        <CheckCircle2 className="w-6 h-6 text-primary" />
+                      </motion.div>
+                      <h3 className="text-xl font-semibold text-white">Processing Complete!</h3>
+                    </div>
+                    <p className="text-white/70 mb-4">
+                      Your content has been successfully analyzed and a comprehensive report has been generated.
+                    </p>
                     </div>
 
                     {/* Report Analysis Display */}

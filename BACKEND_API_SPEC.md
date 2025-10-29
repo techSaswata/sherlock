@@ -1,7 +1,18 @@
 # Backend API Specification
 
 ## Overview
-The URL processor now uses a POST request instead of WebSockets. The frontend will display a simulated processing animation while waiting for the backend response.
+
+The system uses a **fire-and-forget POST request** combined with **Supabase database polling** for result retrieval. This architecture allows for long-running backend processing (up to 10 minutes) without HTTP timeout issues.
+
+### Architecture Flow
+
+1. Frontend sends POST request to `/analyze` (non-blocking)
+2. Backend immediately returns (or request is fire-and-forget)
+3. Frontend shows 5-minute visual animation
+4. Backend processes content in background (up to 10 min)
+5. Backend writes results to Supabase database
+6. Frontend polls database every 2 seconds for results
+7. When results are found, display comprehensive report
 
 ## Endpoint
 
@@ -91,108 +102,265 @@ The frontend automatically parses this markdown and displays it in a beautiful, 
 }
 ```
 
+## Supabase Database Integration
+
+### Table Schema
+
+The backend should write results to the `video_analysis` table:
+
+```sql
+create table public.video_analysis (
+    id uuid primary key default gen_random_uuid(),
+    url text not null,
+    url_status text,
+    url_content jsonb,
+    inserted_at timestamp with time zone default now()
+);
+```
+
+### Backend Workflow
+
+1. **Receive POST Request**:
+   - Accept URL from `/analyze` endpoint
+   - Optional: Return acknowledgment immediately
+
+2. **Insert Initial Record**:
+   ```sql
+   INSERT INTO video_analysis (url, url_status)
+   VALUES ('https://example.com/video', 'processing');
+   ```
+
+3. **Process Content**:
+   - Download and analyze content
+   - Run AI agents for fact-checking
+   - Generate markdown report
+
+4. **Update with Results**:
+   ```sql
+   UPDATE video_analysis
+   SET url_status = 'completed',
+       url_content = '{
+         "success": true,
+         "message": "Analysis completed",
+         "result": "# Fact-Check Report\\n..."
+       }'::jsonb
+   WHERE url = 'https://example.com/video'
+   AND url_status = 'processing';
+   ```
+
+### Database Record Format
+
+The `url_content` JSONB field should contain:
+
+```json
+{
+  "success": true,
+  "message": "Video analysis completed successfully",
+  "result": "# Fact-Check Report\n...",
+  "error": null
+}
+```
+
+### Frontend Polling
+
+The frontend queries the database every 2 seconds:
+
+```sql
+SELECT * FROM video_analysis
+WHERE url = ?
+ORDER BY inserted_at DESC
+LIMIT 1;
+```
+
+When `url_content` is not null, the frontend:
+1. Stops polling
+2. Parses the markdown `result`
+3. Displays the comprehensive report
+
+**Polling Duration**: Up to 10 minutes (300 attempts × 2 seconds)
+
 ## Frontend Behavior
 
 1. **On Submit**: 
-   - Frontend immediately starts POST request to backend
-   - Simultaneously starts the visual processing simulation
-   - Logs show "Sending request to backend..."
+   - Frontend sends POST request to backend (fire-and-forget)
+   - Immediately starts 5-minute visual processing simulation
+   - Logs show "Sending request to backend..." → "Request sent to backend"
 
-2. **During Processing**:
+2. **During Processing (0-5 minutes)**:
    - Beautiful animated UI shows processing steps
-   - Fake progress simulation runs through all steps
-   - If backend is unavailable, shows "Backend unavailable, running in demo mode"
+   - Realistic progress simulation through all content-specific steps
+   - Each step has weighted duration (heavy processes take longer)
+   - User sees logs like: "Downloading content", "Running OCR", etc.
 
-3. **On Completion**:
-   - Frontend waits for backend response
-   - When response arrives, displays comprehensive analysis report with:
+3. **After Animation (5-10 minutes)**:
+   - Frontend starts polling Supabase database
+   - Checks every 2 seconds for results matching the URL
+   - Shows "Compiling Report..." screen
+   - Logs "Checking database for results..."
+   - Every 30 seconds, updates: "Still waiting for results... (X min Y sec)"
+
+4. **When Results Found**:
+   - Frontend retrieves data from database
+   - Parses markdown report into structured format
+   - Displays comprehensive analysis report with:
      - Authenticity score with animated progress bar
      - Summary section
      - Sentiment indicator
      - Key findings list
-     - Claims verification with confidence levels
+     - Verified claims with confidence levels
      - Recommendations
-     - Raw JSON data (collapsible)
-   - Download button to export report as JSON
+     - Raw markdown report (collapsible)
+   - Shows completion message: "Analysis completed successfully!"
+
+5. **On Timeout (10 minutes)**:
+   - If no results found after 300 attempts (10 min)
+   - Shows: "Still compiling the final report..."
+   - User can wait longer or check back later
 
 ## Testing Without Backend
 
-If the backend is not available, the frontend will:
-1. Show a warning: "Backend unavailable, running in demo mode"
-2. Complete the visual animation
-3. Show completion message without the detailed report
-4. Allow user to process another URL
+If the backend/database is not available:
+1. Frontend completes the 5-minute visual animation
+2. Starts polling but finds no results
+3. After 10 minutes, shows: "Still compiling the final report..."
+4. User can process another URL or wait longer
 
 ## Environment Variables
 
-Add to your `.env.local`:
+The frontend is pre-configured with production values. For local development, create `.env.local`:
 
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/process
+# Backend API endpoint
+NEXT_PUBLIC_API_URL=http://localhost:8000/analyze
+
+# Supabase Database (optional - defaults are set)
+NEXT_PUBLIC_SUPABASE_URL=https://uuocunrkthcixhkgzxeq.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 ```
 
-Or use the default: `http://localhost:8000/api/process`
+**Production defaults** (no setup needed):
+- API URL: `https://crew-backend-dxlx.onrender.com/analyze`
+- Supabase: Pre-configured with production credentials
 
 ## Example Backend Implementation (Python/FastAPI)
 
+### With Supabase Integration
+
 ```python
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import time
+from supabase import create_client, Client
+import os
+import json
 
 app = FastAPI()
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your Next.js app
+    allow_origins=["*"],  # Adjust for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class ProcessRequest(BaseModel):
-    url: str
-    content_type: str
-    timestamp: str
+# Supabase client (use service role key for backend)
+supabase: Client = create_client(
+    os.environ.get("SUPABASE_URL"),
+    os.environ.get("SUPABASE_SERVICE_KEY")  # Service role, not anon key
+)
 
-@app.post("/api/process")
-async def process_url(request: ProcessRequest):
-    # Simulate processing time
-    time.sleep(10)  # Your actual processing logic here
+class AnalyzeRequest(BaseModel):
+    url: str
+
+async def process_content_async(url: str):
+    """Background task to process content and update database"""
+    try:
+        # Step 1: Insert initial record
+        supabase.table("video_analysis").insert({
+            "url": url,
+            "url_status": "processing"
+        }).execute()
+        
+        # Step 2: Process the content (your AI agents, analysis, etc.)
+        # This is where you'd call your content analysis pipeline
+        result_markdown = analyze_content(url)  # Your function
+        
+        # Step 3: Update database with results
+        supabase.table("video_analysis").update({
+            "url_status": "completed",
+            "url_content": {
+                "success": True,
+                "message": "Video analysis completed successfully",
+                "result": result_markdown,
+                "error": None
+            }
+        }).eq("url", url).eq("url_status", "processing").execute()
+        
+    except Exception as e:
+        # Update with error status
+        supabase.table("video_analysis").update({
+            "url_status": "error",
+            "url_content": {
+                "success": False,
+                "message": f"Analysis failed: {str(e)}",
+                "result": None,
+                "error": str(e)
+            }
+        }).eq("url", url).execute()
+
+def analyze_content(url: str) -> str:
+    """
+    Your actual content analysis logic goes here.
+    This should return a markdown-formatted fact-check report.
+    """
+    # Example: Download content, run OCR, fact-check, etc.
+    return """# Fact-Check Report
+**Content URL:** {url}
+**Content Type:** Video
+**Analysis Date:** 2024-10-29
+
+## 1. EXPLANATION
+Analysis summary here...
+
+## 2. EVIDENCE
+Claims and verification here...
+
+## 3. FINAL VERDICT
+Conclusion here...
+
+## 4. CONFIDENCE SCORE
+95%
+""".format(url=url)
+
+@app.post("/analyze")
+async def analyze_url(request: AnalyzeRequest, background_tasks: BackgroundTasks):
+    """
+    Endpoint that receives URL and processes it in background.
+    Returns immediately while processing continues.
+    """
+    # Add processing to background tasks
+    background_tasks.add_task(process_content_async, request.url)
     
-    # Return analysis report
+    # Return immediately
     return {
-        "status": "success",
-        "url": request.url,
-        "content_type": request.content_type,
-        "report": {
-            "summary": "Analysis complete. This is a demo response.",
-            "authenticity_score": 0.85,
-            "sentiment": "positive",
-            "key_findings": [
-                "Content appears authentic",
-                "No manipulation detected"
-            ],
-            "claims": [
-                {
-                    "claim": "Example claim from the content",
-                    "verified": True,
-                    "confidence": 0.9
-                }
-            ],
-            "recommendations": [
-                "Verify with additional sources",
-                "Check for updates"
-            ]
-        }
+        "status": "accepted",
+        "message": "Processing started",
+        "url": request.url
     }
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
+
+### Key Points
+
+1. **Background Processing**: Uses FastAPI's `BackgroundTasks` to process asynchronously
+2. **Supabase Service Key**: Backend should use service role key (not anon key) for full access
+3. **Status Updates**: Updates database status from "processing" → "completed" or "error"
+4. **Immediate Response**: Returns HTTP 200 immediately, processing continues in background
 
 ## Notes
 

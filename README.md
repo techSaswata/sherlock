@@ -28,18 +28,31 @@ Sherlock is a full-stack content analysis platform that helps users verify the a
 ┌─────────────┐
 │   Frontend  │  Next.js 14 + React 19 + Tailwind CSS
 │  (User UI)  │  Beautiful animations, real-time updates
+│             │  + Supabase polling (checks every 2s)
 └──────┬──────┘
-       │ POST /analyze
+       │ POST /analyze (fire & forget)
        ↓
 ┌─────────────┐
 │   Backend   │  FastAPI + AI Agents
 │  (Analysis) │  Content extraction, fact-checking
+│             │  Writes results to Supabase
 └──────┬──────┘
        │
        ├─→ Service Scrapers (YouTube, Instagram, Web)
        ├─→ Processing Tools (FFmpeg, Whisper, Tesseract, BLIP-2)
        ├─→ AI Agent Workflow (LangChain/CrewAI)
-       └─→ Vector Database (Caching & semantic search)
+       └─→ Supabase (Results storage & polling)
+       
+┌──────────────────────────────────────────┐
+│ 📊 Workflow:                             │
+│ 1. User submits URL                      │
+│ 2. Frontend sends POST (non-blocking)    │
+│ 3. Frontend shows 5-min animation        │
+│ 4. Backend processes (up to 10 min)     │
+│ 5. Backend writes to Supabase DB         │
+│ 6. Frontend polls DB every 2s            │
+│ 7. Results appear when ready             │
+└──────────────────────────────────────────┘
 ```
 
 ### Technology Stack
@@ -51,6 +64,7 @@ Sherlock is a full-stack content analysis platform that helps users verify the a
 - Tailwind CSS 4
 - Framer Motion (Animations)
 - Radix UI (Components)
+- Supabase (Database polling)
 
 **Backend (Recommended):**
 - Python FastAPI
@@ -85,16 +99,24 @@ Visit **http://localhost:3000** to see the app.
 
 ### ✨ Production Ready
 
-The app is pre-configured with a production backend at:
-**`https://crew-backend-dxlx.onrender.com/analyze`**
+The app is pre-configured with:
+- **Backend API**: `https://crew-backend-dxlx.onrender.com/analyze`
+- **Supabase Database**: Pre-configured for result polling
 
-No environment variables or backend setup needed! Just run and use.
+No environment variables needed! Just run and use.
+
+> **Note**: Results are retrieved via Supabase polling (every 2 seconds). The frontend will automatically fetch analysis results from the database as they become available.
 
 ### Development Mode
 
 To use a local backend during development, create `.env.local`:
 ```bash
+# Backend endpoint
 NEXT_PUBLIC_API_URL=http://localhost:8000/analyze
+
+# Supabase (optional - defaults are pre-configured)
+NEXT_PUBLIC_SUPABASE_URL=https://uuocunrkthcixhkgzxeq.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key_here
 ```
 
 ## 📖 Documentation
@@ -103,6 +125,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/analyze
 |----------|-------------|
 | **[BACKEND_EXPLANATION.md](BACKEND_EXPLANATION.md)** | Complete backend architecture, implementation guide, and code examples |
 | **[BACKEND_API_SPEC.md](BACKEND_API_SPEC.md)** | API endpoints, request/response formats, and integration details |
+| **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)** | Database polling setup, schema, and integration guide |
 | **[FEATURES.md](FEATURES.md)** | Detailed feature list and capabilities showcase |
 
 ## 🎨 Features in Detail
