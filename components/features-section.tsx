@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react"
 
 const AnimatedChatDemo = ({ isActive }: { isActive: boolean }) => {
   const [messages, setMessages] = useState([
-    { text: "Hi! How can I help you today?", isBot: true, visible: false },
-    { text: "I'd like to book an appointment", isBot: false, visible: false },
-    { text: "Perfect! I can help with that. What service are you interested in?", isBot: true, visible: false },
+    { text: "Hello! I'm available 24/7 to assist you.", isBot: true, visible: false },
+    { text: "Can you verify this video?", isBot: false, visible: false },
+    { text: "Analyzing video for deepfakes and manipulations...", isBot: true, visible: false },
   ])
   const [typingDots, setTypingDots] = useState(0)
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -24,19 +24,19 @@ const AnimatedChatDemo = ({ isActive }: { isActive: boolean }) => {
 
     const scenarios = [
       [
-        { text: "Hi! How can I help you today?", isBot: true },
-        { text: "I'd like to book an appointment", isBot: false },
-        { text: "Perfect! I can help with that. What service are you interested in?", isBot: true },
-      ],
-      [
         { text: "Hello! I'm available 24/7 to assist you.", isBot: true },
-        { text: "Do you have weekend availability?", isBot: false },
-        { text: "I can check our weekend slots for you.", isBot: true },
+        { text: "Can you verify this video?", isBot: false },
+        { text: "Analyzing video for deepfakes and manipulations...", isBot: true },
       ],
       [
-        { text: "Good evening! How may I assist you?", isBot: true },
-        { text: "I need help with pricing", isBot: false },
-        { text: "I'd be happy to provide pricing information right away!", isBot: true },
+        { text: "Ready to verify your content.", isBot: true },
+        { text: "Is this Instagram reel authentic?", isBot: false },
+        { text: "Running OCR and frame analysis. Results incoming!", isBot: true },
+      ],
+      [
+        { text: "Fact-checking service ready!", isBot: true },
+        { text: "Check this article for me", isBot: false },
+        { text: "Cross-referencing claims with trusted sources...", isBot: true },
       ],
     ]
 
@@ -201,7 +201,7 @@ const AnimatedCalendarDemo = ({ isActive }: { isActive: boolean }) => {
         ))}
       </div>
       {booked && (
-        <div className="mt-2 text-xs text-green-600 font-medium animate-fade-in">✓ Appointment booked for the 15th</div>
+        <div className="mt-2 text-xs text-green-600 font-medium animate-fade-in">✓ Analysis scheduled for the 15th</div>
       )}
     </div>
   )
@@ -209,9 +209,9 @@ const AnimatedCalendarDemo = ({ isActive }: { isActive: boolean }) => {
 
 const AnimatedEmailDemo = ({ isActive }: { isActive: boolean }) => {
   const [emails, setEmails] = useState([
-    { subject: "Service inquiry", status: "unread" },
-    { subject: "Appointment request", status: "unread" },
-    { subject: "Quote needed", status: "unread" },
+    { subject: "Video verification", status: "unread" },
+    { subject: "Image fact-check", status: "unread" },
+    { subject: "Article analysis", status: "unread" },
   ])
 
   useEffect(() => {

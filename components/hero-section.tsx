@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button"
 import RotatingText from "./RotatingText"
+import Link from "next/link"
 
 const ArrowRight = () => (
   <svg
@@ -67,22 +68,26 @@ export function HeroSection() {
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8 sm:mb-16 animate-fade-in-buttons">
-          <Button
-            size="lg"
-            className="bg-white text-black rounded-full px-8 py-4 text-lg font-medium transition-all duration-300 hover:bg-gray-50 hover:scale-105 hover:shadow-lg group cursor-pointer relative overflow-hidden"
-          >
-            Verify Content Now
-            <ArrowRight />
-          </Button>
+          <Link href="/process">
+            <Button
+              size="lg"
+              className="bg-white text-black rounded-full px-8 py-4 text-lg font-medium transition-all duration-300 hover:bg-gray-50 hover:scale-105 hover:shadow-lg group cursor-pointer relative overflow-hidden"
+            >
+              Verify Content Now
+              <ArrowRight />
+            </Button>
+          </Link>
 
-          <Button
-            variant="outline"
-            size="lg"
-            className="rounded-full px-8 py-4 text-lg font-medium border-border hover:bg-accent transition-all duration-200 hover:scale-105 group bg-transparent cursor-pointer"
-          >
-            <Play />
-            See How It Works
-          </Button>
+          <Link href="/process">
+            <Button
+              variant="outline"
+              size="lg"
+              className="rounded-full px-8 py-4 text-lg font-medium border-border hover:bg-accent transition-all duration-200 hover:scale-105 group bg-transparent cursor-pointer"
+            >
+              <Play />
+              See How It Works
+            </Button>
+          </Link>
         </div>
 
         {/* Trust Indicators */}

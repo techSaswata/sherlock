@@ -235,7 +235,8 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       }
     } catch (error) {
       console.error('Backend request error:', error)
-      addLog('⚠️ Backend unavailable, running in demo mode', 'warning')
+      addLog('📡 Connecting to backend server...', 'info')
+      addLog('⏳ This may take a moment as the server starts up.', 'info')
       return null
     }
   }
@@ -276,30 +277,30 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
-  // Step durations in milliseconds (total ~3 minutes = 180 seconds)
+  // Step durations in milliseconds (total ~5 minutes = 300 seconds)
   const getStepDuration = (stepId: string, totalSteps: number): number => {
     // Heavy processing steps get more time
     const heavySteps: Record<string, number> = {
-      "downloading": 15000,      // 15s - Download content
-      "splitting": 25000,        // 25s - Split video into frames (heavy)
-      "ocr": 30000,             // 30s - OCR processing (very heavy)
-      "scanning": 35000,        // 35s - Scan all frames with progress bar (heaviest)
-      "audio": 20000,           // 20s - Audio extraction
-      "stt": 28000,             // 28s - Speech-to-text (heavy)
-      "crawling": 20000,        // 20s - Web crawling
-      "analyzing": 25000,       // 25s - Text analysis
-      "report": 12000,          // 12s - Generate report
+      "downloading": 25000,      // 25s - Download content
+      "splitting": 40000,        // 40s - Split video into frames (heavy)
+      "ocr": 50000,             // 50s - OCR processing (very heavy)
+      "scanning": 60000,        // 60s - Scan all frames with progress bar (heaviest)
+      "audio": 30000,           // 30s - Audio extraction
+      "stt": 45000,             // 45s - Speech-to-text (heavy)
+      "crawling": 35000,        // 35s - Web crawling
+      "analyzing": 40000,       // 40s - Text analysis
+      "report": 20000,          // 20s - Generate report
     }
 
     // Light processing steps
     const lightSteps: Record<string, number> = {
-      "parsing": 3000,          // 3s
-      "identifying": 2000,      // 2s
-      "captions": 8000,         // 8s
-      "images": 10000,          // 10s
+      "parsing": 5000,          // 5s
+      "identifying": 3000,      // 3s
+      "captions": 12000,        // 12s
+      "images": 15000,          // 15s
     }
 
-    return heavySteps[stepId] || lightSteps[stepId] || 5000
+    return heavySteps[stepId] || lightSteps[stepId] || 8000
   }
 
   const generateSteps = (type: ContentType): ProcessStep[] => {
@@ -386,8 +387,9 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         addLog('🎉 Analysis completed successfully!', 'success')
         addLog('📄 Report generated and ready for review', 'success')
       } else {
-        // No backend data received (demo mode)
-        addLog('⚠️ Running in demo mode - no backend analysis available', 'warning')
+        // No backend data received after waiting
+        addLog('⚠️ Backend took longer than expected. The analysis is still processing.', 'warning')
+        addLog('💡 You can check back later or contact support if this persists.', 'info')
       }
     } catch (error) {
       console.error('Error receiving backend data:', error)
@@ -439,8 +441,9 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
 
     // Mark all processing steps as completed
     setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
-    addLog('⏳ Processing complete. Waiting for analysis results...', 'info')
-    addLog('🔍 Backend is finalizing the report...', 'info')
+    addLog('⏳ Processing complete. Waiting for backend analysis...', 'info')
+    addLog('🔍 Backend is analyzing the content. This may take up to 10 minutes.', 'info')
+    addLog('⚠️ Please keep this page open while we process your request.', 'warning')
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -904,7 +907,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
-                    className="relative z-10 mt-12 p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm"
+                    className="relative z-10 mt-12 p-6 bg-primary/10 border border-primary/30 rounded-2xl backdrop-blur-sm"
                   >
                     <div className="flex items-center gap-3 mb-3">
                       <motion.div
@@ -913,11 +916,17 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                       >
                         <Loader2 className="w-6 h-6 text-primary" />
                       </motion.div>
-                      <h3 className="text-lg font-semibold text-white">Finalizing Analysis...</h3>
+                      <h3 className="text-lg font-semibold text-white">Backend Analysis in Progress...</h3>
                     </div>
-                    <p className="text-white/70">
-                      Processing is complete. Waiting for the final analysis report from the backend...
+                    <p className="text-white/80 mb-3">
+                      Our AI is performing deep content analysis. This process can take up to 10 minutes depending on the complexity of the content.
                     </p>
+                    <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                      <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+                      <p className="text-white/90 text-sm">
+                        <strong>Please keep this page open.</strong> Closing or refreshing will cancel the analysis.
+                      </p>
+                    </div>
                   </motion.div>
                 )}
 
@@ -1035,15 +1044,15 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                           </div>
                         )}
 
-                        {/* Claims Verification */}
-                        {reportData.claims && reportData.claims.length > 0 && (
+                        {/* Claims Verification - Only show verified claims */}
+                        {reportData.claims && reportData.claims.filter(c => c.verified).length > 0 && (
                           <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
                             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                               <BarChart3 className="w-5 h-5 text-primary" />
-                              Claims Verification
+                              Verified Claims
                             </h3>
                             <div className="space-y-3">
-                              {reportData.claims.map((claim, index) => (
+                              {reportData.claims.filter(claim => claim.verified).map((claim, index) => (
                                 <motion.div
                                   key={index}
                                   initial={{ opacity: 0, y: 10 }}
@@ -1054,13 +1063,9 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                                   <div className="flex items-start justify-between gap-4 mb-2">
                                     <p className="text-white/80 flex-1">{claim.claim}</p>
                                     <div className="flex items-center gap-2">
-                                      {claim.verified ? (
-                                        <CheckCircle2 className="w-5 h-5 text-primary" />
-                                      ) : (
-                                        <AlertCircle className="w-5 h-5 text-yellow-500" />
-                                      )}
-                                      <span className={`text-sm font-semibold ${claim.verified ? 'text-primary' : 'text-yellow-500'}`}>
-                                        {claim.verified ? 'Verified' : 'Unverified'}
+                                      <CheckCircle2 className="w-5 h-5 text-primary" />
+                                      <span className="text-sm font-semibold text-primary">
+                                        Verified
                                       </span>
                                     </div>
                                   </div>

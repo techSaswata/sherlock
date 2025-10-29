@@ -5,7 +5,6 @@ import Aurora from "@/components/Aurora"
 import { FeaturesSection } from "@/components/features-section"
 import { AITeamSection } from "@/components/ai-team-section"
 import { TestimonialsSection } from "@/components/testimonials-section"
-import { ROICalculatorSection } from "@/components/roi-calculator-section"
 import { CTASection } from "@/components/cta-section"
 import { Footer } from "@/components/footer"
 
@@ -23,7 +22,6 @@ export default function HomePage() {
           <FeaturesSection />
           <AITeamSection />
           <TestimonialsSection />
-          <ROICalculatorSection />
           <CTASection />
           <Footer />
         </div>
