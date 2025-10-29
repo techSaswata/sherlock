@@ -5,9 +5,9 @@ The URL processor now uses a POST request instead of WebSockets. The frontend wi
 
 ## Endpoint
 
-**POST** `http://localhost:8000/analyze`
+**POST** `https://crew-backend-dxlx.onrender.com/analyze`
 
-Or set via environment variable: `NEXT_PUBLIC_API_URL`
+The frontend is pre-configured with this production endpoint. No environment variables needed.
 
 ## Request Format
 

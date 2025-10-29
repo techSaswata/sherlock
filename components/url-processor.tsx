@@ -43,7 +43,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const completionRef = useRef<HTMLDivElement>(null)
 
   // Backend API configuration
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/analyze'
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://crew-backend-dxlx.onrender.com/analyze'
 
   // Notify parent component when processing state changes
   useEffect(() => {
