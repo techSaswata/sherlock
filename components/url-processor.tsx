@@ -64,6 +64,18 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }, [steps])
 
+  // Auto-scroll when report data is ready
+  useEffect(() => {
+    if (reportData) {
+      setTimeout(() => {
+        completionRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start'
+        })
+      }, 300)
+    }
+  }, [reportData])
+
   const addLog = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const timestamp = new Date().toLocaleTimeString('en-US', { 
       hour12: false, 
