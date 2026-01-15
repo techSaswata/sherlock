@@ -63,7 +63,21 @@ report_generation_task:
     1. EXPLANATION (3-5 lines): Summarize the main claim and verdict
     2. EVIDENCE (focused): Only include evidence for the TOP claims
     3. FINAL VERDICT (ONE sentence): State if the main claim is TRUE or FALSE
-    4. CONFIDENCE SCORE (0-100%): Based on evidence strength
+    4. CONFIDENCE SCORE (0-100%): Calculate based on the scoring guide below
+    
+    CONFIDENCE SCORE CALCULATION GUIDE:
+    - 90-100%: 3+ authoritative sources (official govt, major news, peer-reviewed), no conflicting evidence
+    - 80-89%: 2-3 reliable sources, minor gaps in evidence, mostly consistent
+    - 70-79%: 1-2 sources, some gaps, or minor conflicting reports
+    - 60-69%: Limited sources, significant gaps, or mixed evidence
+    - 50-59%: Weak evidence, only social media or unverified sources
+    - Below 50%: Insufficient evidence, major contradictions, or unverifiable claims
+    
+    BE REALISTIC with scoring. Consider:
+    - Source reliability (official > major news > blogs > social media)
+    - Evidence completeness (full context vs partial information)
+    - Conflicting evidence (deduct points for contradictions)
+    - Recency of sources (recent evidence is more reliable)
     
     KEEP IT CONCISE. Focus on the most important evidence that supports the verdict.
   expected_output: >
@@ -97,8 +111,10 @@ report_generation_task:
     [ONE sentence: Is the main claim TRUE or FALSE? Be clear and direct.]
     
     ## 4. CONFIDENCE SCORE
-    [Number 0-100]%
+    [Calculate using the guide: 90-100% for 3+ authoritative sources, 80-89% for 2-3 reliable sources, 70-79% for limited sources, etc.]
+    [Number]%
     
+    IMPORTANT: Do NOT default to 100%. Honestly assess the evidence quality.
     Format as markdown without code blocks. Be concise and focused.
   agent: report_writer
   output_file: 'fact_check_report.md'

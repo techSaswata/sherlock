@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Link2, CheckCircle2, Loader2, Instagram, Youtube, Globe, Image as ImageIcon, Video, Sparkles, Zap, Brain, Search, Download, SplitSquareHorizontal, Scan, MessageSquare, Music, FileText, AlertCircle, TrendingUp, Target, BarChart3 } from "lucide-react"
+import { Link2, CheckCircle2, Loader2, Instagram, Youtube, Globe, Image as ImageIcon, Video, Sparkles, Zap, Brain, Search, Download, SplitSquareHorizontal, Scan, MessageSquare, Music, FileText, AlertCircle, TrendingUp, Target, BarChart3, ExternalLink, XCircle, BookOpen } from "lucide-react"
 import { ProcessingBackground } from "./processing-background"
 import { supabase } from "@/lib/supabase"
 
@@ -21,13 +21,29 @@ interface URLProcessorProps {
   onProcessingChange?: (isProcessing: boolean) => void
 }
 
+interface Source {
+  name: string
+  url: string
+  date?: string
+}
+
+interface ClaimData {
+  claim: string
+  verified: boolean
+  confidence: number
+  status: string
+  evidence?: string
+  sources?: Source[]
+}
+
 interface ReportData {
   summary?: string
   authenticity_score?: number
   key_findings?: string[]
-  claims?: Array<{ claim: string; verified: boolean; confidence: number }>
+  claims?: ClaimData[]
   sentiment?: string
   recommendations?: string[]
+  allSources?: Source[]
   [key: string]: any
 }
 
@@ -40,12 +56,15 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
   const [scanProgress, setScanProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ id: string; message: string; timestamp: string; type: 'info' | 'success' | 'warning' }>>([])
   const [reportData, setReportData] = useState<ReportData | null>(null)
+  
+  // Ref to signal when results are ready (for speeding up animation)
+  const resultsReadyRef = useRef<boolean>(false)
+  const pendingResultsRef = useRef<any>(null)
   const [backendResponse, setBackendResponse] = useState<any>(null)
   const completionRef = useRef<HTMLDivElement>(null)
 
-  // Backend API configuration
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://cx506q4w-8000.inc1.devtunnels.ms/analyze'
-  // const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://crew-backend-dxlx.onrender.com/analyze'
+  // Backend API configuration - fallback to localhost if env not set
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/analyze'
 
   // Notify parent component when processing state changes
   useEffect(() => {
@@ -107,7 +126,30 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     const report: ReportData = {
       key_findings: [],
       claims: [],
-      recommendations: []
+      recommendations: [],
+      allSources: []
+    }
+
+    // Helper function to parse sources from text
+    const parseSources = (text: string): Source[] => {
+      const sources: Source[] = []
+      // Match patterns like "- Name - URL (Date)" or "- [Name](URL)"
+      const sourceRegex = /[-•]\s*(?:\[([^\]]+)\]\(([^)]+)\)|([^-\n]+?)\s*[-–]\s*(https?:\/\/[^\s\)]+)(?:\s*\(([^)]+)\))?)/gi
+      let match
+      while ((match = sourceRegex.exec(text)) !== null) {
+        if (match[1] && match[2]) {
+          // Markdown link format [Name](URL)
+          sources.push({ name: match[1].trim(), url: match[2].trim() })
+        } else if (match[3] && match[4]) {
+          // Plain format: Name - URL (Date)
+          sources.push({ 
+            name: match[3].trim(), 
+            url: match[4].trim(),
+            date: match[5]?.trim()
+          })
+        }
+      }
+      return sources
     }
 
     // Extract EXPLANATION section as summary
@@ -116,11 +158,16 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       report.summary = explanationMatch[1].trim()
     }
 
-    // Extract CONFIDENCE SCORE
-    const confidenceMatch = markdown.match(/## 4\. CONFIDENCE SCORE\n(\d+)%/i)
+    // Extract CONFIDENCE SCORE (more flexible matching)
+    const confidenceMatch = markdown.match(/## 4\. CONFIDENCE SCORE[\s\n]*(\d+)\s*%/i) ||
+                            markdown.match(/CONFIDENCE SCORE[:\s]*(\d+)\s*%/i) ||
+                            markdown.match(/Confidence[:\s]*(\d+)\s*%/i)
     if (confidenceMatch) {
       report.authenticity_score = parseInt(confidenceMatch[1]) / 100
     }
+    
+    // Store overall confidence for use in claims
+    const overallConfidence = report.authenticity_score || 0.85
 
     // Extract FINAL VERDICT for sentiment
     const verdictMatch = markdown.match(/## 3\. FINAL VERDICT\n([\s\S]*?)(?=\n## |$)/i)
@@ -135,31 +182,63 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       }
     }
 
-    // Extract claims from EVIDENCE section
-    const claimRegex = /### Claim \d+: (.*?)\n\*\*Status:\*\* (TRUE|FALSE|UNVERIFIED)([\s\S]*?)(?=\n### Claim |\n## |$)/gi
+    // Extract claims from EVIDENCE section with sources
+    const claimRegex = /### Claim \d+: (.*?)\n\*\*Status:\*\* (TRUE|FALSE|MISLEADING|UNVERIFIED)([\s\S]*?)(?=\n### Claim |\n## |$)/gi
     let claimMatch
     while ((claimMatch = claimRegex.exec(markdown)) !== null) {
       const claim = claimMatch[1].trim()
       const status = claimMatch[2].toUpperCase()
       const evidenceText = claimMatch[3] || ''
       
-      // Try to extract confidence from Key Evidence or other indicators
-      let confidence = 0.85 // default
-      if (status === 'TRUE') confidence = 0.95
-      else if (status === 'FALSE') confidence = 0.90
-      else confidence = 0.50
+      // Try to extract per-claim confidence from the evidence text
+      const claimConfidenceMatch = evidenceText.match(/confidence[:\s]*(\d+)\s*%/i)
+      let confidence: number
+      
+      if (claimConfidenceMatch) {
+        // Use per-claim confidence if found
+        confidence = parseInt(claimConfidenceMatch[1]) / 100
+      } else {
+        // Use overall confidence score as base, slightly adjusted by status
+        // This ensures the confidence reflects the actual research quality
+        if (status === 'TRUE') {
+          confidence = overallConfidence
+        } else if (status === 'FALSE') {
+          confidence = overallConfidence * 0.95 // Slightly lower for false claims
+        } else if (status === 'MISLEADING') {
+          confidence = overallConfidence * 0.85
+        } else {
+          confidence = 0.50 // Unverified claims get 50%
+        }
+      }
+
+      // Extract key evidence
+      const keyEvidenceMatch = evidenceText.match(/\*\*Key Evidence:\*\* ([\s\S]*?)(?=\n\*\*Sources|\n\n|$)/i)
+      const evidence = keyEvidenceMatch ? keyEvidenceMatch[1].trim() : ''
+
+      // Extract sources for this claim
+      const sourcesMatch = evidenceText.match(/\*\*Sources:\*\*([\s\S]*?)(?=\n### |\n## |$)/i)
+      const claimSources = sourcesMatch ? parseSources(sourcesMatch[1]) : []
 
       report.claims?.push({
         claim: claim,
         verified: status === 'TRUE',
-        confidence: confidence
+        status: status,
+        confidence: confidence,
+        evidence: evidence,
+        sources: claimSources
       })
 
-      // Extract key evidence as findings
-      const keyEvidenceMatch = evidenceText.match(/\*\*Key Evidence:\*\* ([\s\S]*?)(?=\n\*\*|$)/)
-      if (keyEvidenceMatch) {
-        report.key_findings?.push(keyEvidenceMatch[1].trim())
+      // Add to key findings
+      if (evidence) {
+        report.key_findings?.push(evidence)
       }
+
+      // Add to all sources (deduplicated)
+      claimSources.forEach(source => {
+        if (!report.allSources?.some(s => s.url === source.url)) {
+          report.allSources?.push(source)
+        }
+      })
     }
 
     // If no claims found via regex, try to extract from evidence section more broadly
@@ -167,16 +246,17 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
       const evidenceMatch = markdown.match(/## 2\. EVIDENCE\n([\s\S]*?)(?=\n## |$)/i)
       if (evidenceMatch) {
         const evidenceText = evidenceMatch[1]
-        // Extract key evidence bullets as findings
         const bulletMatch = evidenceText.match(/\*\*Key Evidence:\*\* ([\s\S]*?)(?=\n\*\*|$)/)
         if (bulletMatch) {
           const findings = bulletMatch[1]
             .split(/[.;]/)
             .map(f => f.trim())
             .filter(f => f.length > 20)
-          
           report.key_findings?.push(...findings)
         }
+        // Also try to get sources
+        const sources = parseSources(evidenceText)
+        report.allSources?.push(...sources)
       }
     }
 
@@ -230,15 +310,95 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
-  // Poll Supabase database for results
-  const pollDatabaseForResults = async (url: string): Promise<any> => {
+  // Poll Supabase database for results (runs in parallel with animation)
+  const startPollingForResults = (url: string) => {
     const maxAttempts = 300 // 10 minutes = 300 attempts (every 2 seconds)
     let attempts = 0
 
-    addLog('🔍 compiling the final report...', 'info')
+    const pollInterval = setInterval(async () => {
+      attempts++
+
+      try {
+        // Query Supabase for the URL
+        const { data, error } = await supabase
+          .from('video_analysis')
+          .select('*')
+          .eq('url', url)
+          .order('inserted_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            // No rows found, continue polling silently
+            return
+          }
+          console.error('Supabase error:', error)
+          return
+        }
+
+        // Check if we have completed content
+        if (data && data.url_status === 'completed' && data.url_content) {
+          clearInterval(pollInterval)
+          addLog('✅ Results ready! Finishing up...', 'success')
+          
+          // Parse the result and store it
+          const content = data.url_content
+          if (content.result) {
+            const parsedReport = parseMarkdownReport(content.result)
+            pendingResultsRef.current = {
+              success: true,
+              message: content.message || 'Analysis completed',
+              result: content.result,
+              report: parsedReport,
+              status: data.url_status
+            }
+          } else {
+            pendingResultsRef.current = content
+          }
+          
+          // Signal that results are ready - animation will speed up
+          resultsReadyRef.current = true
+        } else if (data && data.url_status === 'error') {
+          clearInterval(pollInterval)
+          addLog('❌ Analysis failed - check backend logs', 'warning')
+          resultsReadyRef.current = true
+          pendingResultsRef.current = null
+        }
+
+        // Check if max attempts reached
+        if (attempts >= maxAttempts) {
+          clearInterval(pollInterval)
+        }
+      } catch (err) {
+        console.error('Polling error:', err)
+      }
+    }, 2000) // Poll every 2 seconds
+
+    return pollInterval
+  }
+
+  // Legacy polling function for fallback (waits until results)
+  const pollDatabaseForResults = async (url: string): Promise<any> => {
+    // If results are already available from parallel polling, return immediately
+    if (resultsReadyRef.current && pendingResultsRef.current) {
+      return pendingResultsRef.current
+    }
+
+    const maxAttempts = 300 // 10 minutes = 300 attempts (every 2 seconds)
+    let attempts = 0
+
+    addLog('🔍 Compiling the final report...', 'info')
 
     return new Promise((resolve) => {
       const pollInterval = setInterval(async () => {
+        // Check if results came from parallel polling
+        if (resultsReadyRef.current) {
+          clearInterval(pollInterval)
+          resolve(pendingResultsRef.current)
+          return
+        }
+
         attempts++
 
         try {
@@ -416,6 +576,10 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     setLogs([])
     setReportData(null)
     setBackendResponse(null)
+    
+    // Reset refs
+    resultsReadyRef.current = false
+    pendingResultsRef.current = null
 
     addLog('🚀 Initializing content processor...', 'info')
 
@@ -432,10 +596,14 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     // Submit to backend (fire and forget)
     await submitToBackend(url, type)
 
+    // Start polling in parallel with animation
+    startPollingForResults(url)
+
     // Run simulation mode while backend processes - pass steps directly
+    // Animation will speed up when resultsReadyRef becomes true
     await runSimulationMode(processSteps)
 
-    // Start polling database for results
+    // Get results (either from parallel polling or wait for them)
     try {
       const backendData = await pollDatabaseForResults(url)
       
@@ -455,7 +623,7 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
         addLog('📄 Report generated and ready for review', 'success')
       } else {
         // No data received after polling timeout
-        addLog('⏳ compiling the final report...', 'info')
+        addLog('⏳ Compiling the final report...', 'info')
       }
     } catch (error) {
       console.error('Error receiving backend data:', error)
@@ -463,13 +631,30 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
     }
   }
 
-  // Simulation mode with realistic timing
+  // Simulation mode with realistic timing - speeds up when results are ready
   const runSimulationMode = async (processSteps: ProcessStep[]) => {
     await new Promise((resolve) => setTimeout(resolve, 500))
 
+    // Calculate speed multiplier: normal = 1, fast = much faster when results ready
+    const getSpeedMultiplier = () => resultsReadyRef.current ? 0.1 : 1 // 10x faster when ready
+    
+    // Remaining steps should complete in ~10 seconds when results are ready
+    const FAST_MODE_STEP_DURATION = 800 // 800ms per step in fast mode
+
     // Simulate processing steps with realistic durations
     for (let i = 0; i < processSteps.length; i++) {
-      const stepDuration = getStepDuration(processSteps[i].id, processSteps.length)
+      const remainingSteps = processSteps.length - i
+      
+      // If results are ready, speed through remaining steps in ~10 seconds
+      let stepDuration: number
+      if (resultsReadyRef.current) {
+        stepDuration = Math.min(FAST_MODE_STEP_DURATION, 10000 / remainingSteps)
+        if (i === currentStep) {
+          addLog('⚡ Results ready! Finishing animation...', 'success')
+        }
+      } else {
+        stepDuration = getStepDuration(processSteps[i].id, processSteps.length)
+      }
       
       addLog(`⚡ ${processSteps[i].label}...`, 'info')
 
@@ -484,22 +669,44 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
 
       // Special handling for scanning frames step with progress bar
       if (processSteps[i].id === "scanning") {
-        const progressUpdateInterval = stepDuration / 20 // Update 20 times
-        for (let progress = 0; progress <= 100; progress += 5) {
-          await new Promise((resolve) => setTimeout(resolve, progressUpdateInterval))
+        // If results ready, speed through progress bar quickly
+        const fastMode = resultsReadyRef.current
+        const progressStep = fastMode ? 20 : 5 // Bigger jumps in fast mode
+        const progressInterval = fastMode ? 50 : stepDuration / 20
+        
+        for (let progress = 0; progress <= 100; progress += progressStep) {
+          await new Promise((resolve) => setTimeout(resolve, progressInterval))
           setScanProgress(progress)
           setSteps((prev) =>
             prev.map((step) =>
               step.id === "scanning" ? { ...step, progress } : step
             )
           )
-          if (progress % 20 === 0 && progress > 0) {
-            addLog(`📊 Scanning progress: ${progress}%`, 'info')
+          // Check for results during progress
+          if (resultsReadyRef.current && progress < 80) {
+            // Jump to end if results ready
+            setScanProgress(100)
+            setSteps((prev) =>
+              prev.map((step) =>
+                step.id === "scanning" ? { ...step, progress: 100 } : step
+              )
+            )
+            break
           }
         }
       } else {
-        // Wait for the step duration
-        await new Promise((resolve) => setTimeout(resolve, stepDuration))
+        // Wait for the step duration, but check for results periodically
+        const checkInterval = 200 // Check every 200ms
+        const iterations = Math.ceil(stepDuration / checkInterval)
+        
+        for (let j = 0; j < iterations; j++) {
+          await new Promise((resolve) => setTimeout(resolve, checkInterval))
+          
+          // If results became ready, speed up by breaking early
+          if (resultsReadyRef.current && j > 2) {
+            break
+          }
+        }
       }
       
       addLog(`✓ ${processSteps[i].label} completed`, 'success')
@@ -507,9 +714,14 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
 
     // Mark all processing steps as completed
     setSteps((prev) => prev.map((step) => ({ ...step, completed: true, active: false })))
-    addLog('📝 Compiling into report...', 'info')
-    addLog('🔍 Backend is finalizing the analysis. This may take up to 10 minutes.', 'info')
-    addLog('⚠️ Please keep this page open while we process your request.', 'warning')
+    
+    if (resultsReadyRef.current) {
+      addLog('📝 Report ready!', 'success')
+    } else {
+      addLog('📝 Compiling into report...', 'info')
+      addLog('🔍 Backend is finalizing the analysis. This may take up to 10 minutes.', 'info')
+      addLog('⚠️ Please keep this page open while we process your request.', 'warning')
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1110,42 +1322,145 @@ export function URLProcessor({ onProcessingChange }: URLProcessorProps) {
                           </div>
                         )}
 
-                        {/* Claims Verification - Only show verified claims */}
-                        {reportData.claims && reportData.claims.filter(c => c.verified).length > 0 && (
+                        {/* Claims Verification with Sources */}
+                        {reportData.claims && reportData.claims.length > 0 && (
                           <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
                             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                               <BarChart3 className="w-5 h-5 text-primary" />
-                              Verified Claims
+                              Claims Verification
                             </h3>
-                            <div className="space-y-3">
-                              {reportData.claims.filter(claim => claim.verified).map((claim, index) => (
+                            <div className="space-y-4">
+                              {reportData.claims.map((claim, index) => (
                                 <motion.div
                                   key={index}
                                   initial={{ opacity: 0, y: 10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   transition={{ delay: 1 + index * 0.1 }}
-                                  className="p-4 bg-black/20 rounded-xl"
+                                  className={`p-5 rounded-xl border ${
+                                    claim.status === 'TRUE' 
+                                      ? 'bg-green-500/5 border-green-500/20' 
+                                      : claim.status === 'FALSE'
+                                      ? 'bg-red-500/5 border-red-500/20'
+                                      : claim.status === 'MISLEADING'
+                                      ? 'bg-yellow-500/5 border-yellow-500/20'
+                                      : 'bg-white/5 border-white/10'
+                                  }`}
                                 >
-                                  <div className="flex items-start justify-between gap-4 mb-2">
-                                    <p className="text-white/80 flex-1">{claim.claim}</p>
-                                    <div className="flex items-center gap-2">
-                                      <CheckCircle2 className="w-5 h-5 text-primary" />
-                                      <span className="text-sm font-semibold text-primary">
-                                        Verified
-                                      </span>
+                                  {/* Claim Header */}
+                                  <div className="flex items-start justify-between gap-4 mb-3">
+                                    <p className="text-white font-medium flex-1">{claim.claim}</p>
+                                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
+                                      claim.status === 'TRUE' 
+                                        ? 'bg-green-500/20 text-green-400' 
+                                        : claim.status === 'FALSE'
+                                        ? 'bg-red-500/20 text-red-400'
+                                        : claim.status === 'MISLEADING'
+                                        ? 'bg-yellow-500/20 text-yellow-400'
+                                        : 'bg-white/10 text-white/60'
+                                    }`}>
+                                      {claim.status === 'TRUE' ? (
+                                        <CheckCircle2 className="w-4 h-4" />
+                                      ) : claim.status === 'FALSE' ? (
+                                        <XCircle className="w-4 h-4" />
+                                      ) : (
+                                        <AlertCircle className="w-4 h-4" />
+                                      )}
+                                      <span className="text-sm font-semibold">{claim.status}</span>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-2 text-sm text-white/60">
+
+                                  {/* Evidence */}
+                                  {claim.evidence && (
+                                    <div className="mb-4 p-3 bg-black/20 rounded-lg">
+                                      <p className="text-sm text-white/70 leading-relaxed">{claim.evidence}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Confidence Bar */}
+                                  <div className="flex items-center gap-2 text-sm text-white/60 mb-4">
                                     <span>Confidence:</span>
-                                    <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden max-w-[100px]">
-                                      <div
-                                        className="h-full bg-primary rounded-full"
-                                        style={{ width: `${claim.confidence * 100}%` }}
+                                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden max-w-[150px]">
+                                      <motion.div
+                                        className={`h-full rounded-full ${
+                                          claim.status === 'TRUE' 
+                                            ? 'bg-green-500' 
+                                            : claim.status === 'FALSE'
+                                            ? 'bg-red-500'
+                                            : 'bg-yellow-500'
+                                        }`}
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${claim.confidence * 100}%` }}
+                                        transition={{ duration: 1, delay: 1.2 + index * 0.1 }}
                                       />
                                     </div>
                                     <span className="font-medium">{Math.round(claim.confidence * 100)}%</span>
                                   </div>
+
+                                  {/* Sources for this claim */}
+                                  {claim.sources && claim.sources.length > 0 && (
+                                    <div className="border-t border-white/10 pt-3">
+                                      <p className="text-xs text-white/50 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                        <BookOpen className="w-3 h-3" />
+                                        Sources ({claim.sources.length})
+                                      </p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {claim.sources.map((source, sIdx) => (
+                                          <a
+                                            key={sIdx}
+                                            href={source.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-primary/30 rounded-lg text-sm text-white/70 hover:text-primary transition-all group"
+                                          >
+                                            <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+                                            <span className="truncate max-w-[150px]">{source.name}</span>
+                                          </a>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* All Sources Summary */}
+                        {reportData.allSources && reportData.allSources.length > 0 && (
+                          <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl">
+                            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                              <BookOpen className="w-5 h-5 text-primary" />
+                              Sources Referenced ({reportData.allSources.length})
+                            </h3>
+                            <div className="grid gap-3">
+                              {reportData.allSources.map((source, index) => (
+                                <motion.a
+                                  key={index}
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 1.3 + index * 0.05 }}
+                                  className="flex items-center gap-3 p-3 bg-black/20 hover:bg-black/30 rounded-xl border border-transparent hover:border-primary/30 transition-all group"
+                                >
+                                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                                    <ExternalLink className="w-5 h-5 text-primary" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white font-medium truncate group-hover:text-primary transition-colors">
+                                      {source.name}
+                                    </p>
+                                    <p className="text-xs text-white/40 truncate">
+                                      {source.url.replace(/^https?:\/\//, '').split('/')[0]}
+                                    </p>
+                                  </div>
+                                  {source.date && (
+                                    <span className="text-xs text-white/40 shrink-0">
+                                      {source.date}
+                                    </span>
+                                  )}
+                                </motion.a>
                               ))}
                             </div>
                           </div>
